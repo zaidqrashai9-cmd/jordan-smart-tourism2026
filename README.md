@@ -1,0 +1,1 @@
+# jordan-smart-tourism2026
