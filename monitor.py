@@ -1,8 +1,17 @@
 """Jordan Tourism Monitor: standard-library collector and Windows desktop client."""
 from email.utils import parsedate_to_datetime
+import html
+import unicodedata
 import queue
 import argparse, concurrent.futures, csv, datetime as dt, hashlib, json, pathlib, re, threading, urllib.parse, urllib.request, webbrowser, xml.etree.ElementTree as ET
-QUERIES = ['"وزارة السياحة والآثار" الأردن', '"عماد حجازين"', '"هيئة تنشيط السياحة"', '"أردننا جنة"', 'السياحة الأردن', 'Jordan tourism', 'Jordan travel Petra Wadi Rum', 'Jordan tourism Aqaba Dead Sea Jerash']
+QUERIES = [
+    '"وزارة السياحة والآثار" "الأردن"', '"عماد حجازين"',
+    '"هيئة تنشيط السياحة"', '"أردننا جنة"', '"السياحة" "الأردن"',
+    '"Jordan tourism"', '"Jordan travel" -"Michael Jordan" -"Jordan Brown" -"Jordan Baker"',
+    '("Petra" OR "Wadi Rum" OR "Aqaba" OR "Jerash" OR "Dead Sea") (tourism OR hotel OR heritage OR visitors)',
+    '"الأردن" (طيران OR فنادق OR آثار OR مهرجان OR زوار)',
+    '"Jordan" (airport OR flights OR archaeology OR heritage OR hotels)'
+]
 JORDAN_TIME = dt.timezone(dt.timedelta(hours=3), 'Amman')
 PERIODS = ('الكل', 'اليوم', 'آخر 3 ساعات', 'آخر 9 ساعات')
 def publication_time(row):
@@ -27,6 +36,33 @@ def matches_period(row, period, now=None):
         start = now - dt.timedelta(hours={'آخر 3 ساعات': 3, 'آخر 9 ساعات': 9}[period])
     return start <= published <= now
 
+def normalized(text):
+    text = unicodedata.normalize('NFKC', text).casefold()
+    text = re.sub(r'[\u064b-\u065f\u0670ـ]', '', text)
+    return text.translate(str.maketrans('أإآى', 'اااي'))
+
+def has_terms(text, terms):
+    return any(re.search(r'(?<!\w)' + re.escape(normalized(term)) + r'(?!\w)', text) for term in terms)
+
+def relevance(row):
+    # Queries and publisher names are not evidence that an article is about Jordan.
+    title = row.get('title', '').rsplit(' - ', 1)[0]
+    text = normalized(title + ' ' + row.get('summary', ''))
+    official = has_terms(text, ['وزارة السياحة والآثار', 'هيئة تنشيط السياحة', 'أردننا جنة', 'عماد حجازين', 'Jordan Tourism Board', 'Jordan Ministry of Tourism'])
+    destination = has_terms(text, ['Wadi Rum', 'Aqaba', 'Jerash', 'Ajloun', 'Madaba', 'Umm Qais', 'Umm al Jimal', 'Baptism Site', 'وادي رم', 'العقبة', 'جرش', 'عجلون', 'مادبا', 'أم قيس', 'أم الجمال', 'المغطس', 'البتراء', 'البترا'])
+    # Petra alone may be a person's name; require Jordan or a tourism context below.
+    country = has_terms(text, ['Jordan', 'Jordanian', 'الأردن', 'الأردنية', 'الأردني', 'الاردن'])
+    direct = has_terms(text, ['tourism', 'tourist', 'tourists', 'travel', 'hotel', 'hotels', 'resort', 'resorts', 'destination', 'visitors', 'سياحة', 'السياحة', 'السياحي', 'السياحية', 'السياحيه', 'السياح', 'سياح', 'زوار', 'الزوار', 'فندق', 'فنادق', 'الفنادق', 'منتجع', 'المنتجعات'])
+    indirect = has_terms(text, ['airport', 'flights', 'airline', 'heritage', 'archaeology', 'archaeological', 'festival', 'museum', 'conservation', 'nature reserve', 'مطار', 'المطار', 'الطيران', 'طيران', 'رحلات', 'تراث', 'التراث', 'آثار', 'الآثار', 'الأثرية', 'اثرية', 'مهرجان', 'مهرجانات', 'متحف', 'محمية', 'محميات'])
+    person = bool(re.search(r'\bjordan\s+(brown|baker|spieth|pickford|henderson|love|poole|peele|peterson|chiles)\b|\bmichael jordan\b|\bair jordan\b', text))
+    if official: return 'مباشر'
+    if person and not destination: return 'مستبعد'
+    if (country or destination) and direct: return 'مباشر'
+    if (country or destination) and indirect: return 'غير مباشر'
+    if destination or (has_terms(text, ['Petra']) and direct): return 'للمراجعة'
+    if country and not person: return 'للمراجعة'
+    return 'مستبعد'
+
 def fetch(url):
     if urllib.parse.urlparse(url).scheme != 'https':
         raise ValueError('HTTPS is required')
@@ -37,7 +73,7 @@ def parse_feed(data, query):
     for item in ET.fromstring(data).findall('./channel/item'):
         title=item.findtext('title','').strip(); link=item.findtext('link','').strip()
         if not title or urllib.parse.urlparse(link).scheme not in ('https','http'): continue
-        rows.append(dict(id=hashlib.sha256(link.encode()).hexdigest(),title=title,url=link,source=item.findtext('source',''),published=item.findtext('pubDate',''),query=query,discovered=dt.datetime.now(dt.timezone.utc).isoformat()))
+        rows.append(dict(id=hashlib.sha256(link.encode()).hexdigest(),title=title,url=link,source=item.findtext('source',''),published=item.findtext('pubDate',''),summary=html.unescape(re.sub('<[^>]+>', ' ', item.findtext('description',''))),query=query,discovered=dt.datetime.now(dt.timezone.utc).isoformat()))
     return rows
 def sorted_articles(rows):
     floor = dt.datetime.min.replace(tzinfo=dt.timezone.utc)
@@ -63,36 +99,41 @@ def collect(previous=None):
 def desktop():
     import tkinter as tk
     from tkinter import ttk, messagebox, filedialog
-    root=tk.Tk(); root.title('رصد السياحة الأردنية — 0.3'); root.geometry('1150x720')
+    root=tk.Tk(); root.title('رصد السياحة الأردنية — 0.4'); root.geometry('1150x720')
     cache=pathlib.Path.home()/'JordanTourismMonitor'; cache.mkdir(exist_ok=True); path=cache/'feed.json'
     state=json.loads(path.read_text('utf-8')) if path.exists() else {'items':[]}
     inbox = queue.Queue()
-    shown=[]; period=tk.StringVar(value='الكل'); count=tk.StringVar(); keyword=tk.StringVar(); endpoint=tk.StringVar(); note=tk.StringVar(value='الأخبار عبر RSS • فيسبوك وإنستغرام وX غير مربوطين بعد')
+    scope=tk.StringVar(value='مرتبط بالسياحة'); shown=[]; period=tk.StringVar(value='الكل'); count=tk.StringVar(); keyword=tk.StringVar(); endpoint=tk.StringVar(); note=tk.StringVar(value='الأخبار عبر RSS • فيسبوك وإنستغرام وX غير مربوطين بعد')
     ttk.Label(root,text='رصد السياحة الأردنية',font=('Arial',22)).pack(pady=12)
     bar=ttk.Frame(root); bar.pack(fill='x',padx=16)
     ttk.Label(bar,text='بحث').pack(side='right'); ttk.Entry(bar,textvariable=keyword,width=45).pack(side='right')
     ttk.Label(bar,text='الفترة').pack(side='right',padx=8)
     ttk.Combobox(bar,textvariable=period,values=PERIODS,state='readonly',width=18).pack(side='right')
+    ttk.Combobox(bar,textvariable=scope,values=('مرتبط بالسياحة', 'مباشر', 'غير مباشر', 'للمراجعة', 'مستبعد'),state='readonly',width=18).pack(side='right',padx=8)
     ttk.Label(root,textvariable=count).pack(pady=4)
-    table=ttk.Treeview(root,columns=('title','source','published'),show='headings')
-    for c,label,width in [('title','العنوان',650),('source','المصدر',180),('published','وقت النشر — الأردن',270)]: table.heading(c,text=label); table.column(c,width=width)
+    table=ttk.Treeview(root,columns=('title','source','published','relevance'),show='headings')
+    for c,label,width in [('title','العنوان',650),('source','المصدر',180),('published','وقت النشر — الأردن',170),('relevance','الصلة',100)]: table.heading(c,text=label); table.column(c,width=width)
     table.pack(fill='both',expand=True,padx=16,pady=10)
     def render(*_):
         table.delete(*table.get_children()); shown.clear()
         now = dt.datetime.now(dt.timezone.utc)
         for row in sorted_articles(state['items']):
+            label = relevance(row)
+            if scope.get() == 'مرتبط بالسياحة':
+                if label not in ('مباشر', 'غير مباشر'): continue
+            elif label != scope.get(): continue
             if not matches_period(row, period.get(), now): continue
             if keyword.get().casefold() in (row['title']+' '+row['source']).casefold():
-                shown.append(row); table.insert('', 'end',iid=str(len(shown)-1),values=(row['title'],row['source'],publication_time(row).astimezone(JORDAN_TIME).strftime('%Y-%m-%d %H:%M') if publication_time(row) else 'غير معروف'))
+                shown.append(row); table.insert('', 'end',iid=str(len(shown)-1),values=(row['title'],row['source'],publication_time(row).astimezone(JORDAN_TIME).strftime('%Y-%m-%d %H:%M') if publication_time(row) else 'غير معروف',label))
         count.set(f'المعروض: {len(shown)} من {len(state["items"])} | بتوقيت الأردن | حسب وقت النشر؛ التواريخ غير المعروفة تظهر في الكل فقط')
     def open_item(_):
         if table.selection(): webbrowser.open(shown[int(table.selection()[0])]['url'])
-    table.bind('<Double-1>',open_item); keyword.trace_add('write',render); period.trace_add('write',render)
+    table.bind('<Double-1>',open_item); keyword.trace_add('write',render); period.trace_add('write',render); scope.trace_add('write',render)
     def done(result):
         nonlocal state
         state=result; path.write_text(json.dumps(state,ensure_ascii=False),encoding='utf-8'); render()
         errors=sum(bool(x.get('error')) for x in state.get('sources',[]))
-        today = sum(matches_period(r, 'اليوم') for r in state['items'])
+        today = sum(matches_period(r, 'اليوم') and relevance(r) in ('مباشر', 'غير مباشر') for r in state['items'])
         latest = next((publication_time(r) for r in sorted_articles(state['items']) if publication_time(r)), None)
         latest_label = latest.astimezone(JORDAN_TIME).strftime('%Y-%m-%d %H:%M') if latest else 'غير معروف'
         current = dt.datetime.now(JORDAN_TIME).strftime('%Y-%m-%d %H:%M')
