@@ -19,12 +19,12 @@ jobs:
       - name: Check Python syntax
         run: python -m py_compile monitor.py
       - name: Install packaging tool
-        run: python -m pip install pyinstaller==6.16.0
+        run: python -m pip install pyinstaller==6.16.0 trafilatura==2.3.1 googlenewsdecoder==0.2.2
       - name: Build desktop executable
-        run: python -m PyInstaller --noconfirm --clean --onedir --noupx --windowed --name JordanTourismMonitor monitor.py
+        run: python -m PyInstaller --noconfirm --clean --onedir --noupx --windowed --collect-all trafilatura --collect-all googlenewsdecoder --collect-all justext --collect-all dateparser --collect-all htmldate --collect-all courlan --name JordanTourismMonitor monitor.py
       - name: Smoke test packaged executable
         run: |
-          $p = Start-Process -FilePath dist/JordanTourismMonitor/JordanTourismMonitor.exe -ArgumentList "--help" -Wait -PassThru
+          $p = Start-Process -FilePath dist/JordanTourismMonitor/JordanTourismMonitor.exe -ArgumentList "--self-check" -Wait -PassThru
           if ($p.ExitCode -ne 0) { throw "Packaged executable failed" }
       - uses: actions/upload-artifact@v4
         with:
