@@ -158,27 +158,52 @@ def matches_keyword(row, selected):
         return has_terms(text, KEYWORD_GROUPS['عماد حجازين']) and has_terms(text, ['وزير السياحة', 'وزير السياحة والآثار', 'tourism minister', 'minister of tourism'])
     return has_terms(text, KEYWORD_GROUPS.get(selected, [selected]))
 
-def relevance(row):
-    # Queries and publisher names are not evidence that an article is about Jordan.
+JORDAN_PLACES = ['العقبة', 'العقبه', 'البترا', 'البتراء', 'بتراء', 'وادي رم', 'وادي رام', 'جرش', 'عجلون', 'مادبا', 'ام قيس', 'ام الجمال', 'المغطس', 'Aqaba', 'Wadi Rum', 'Wadi Ramm', 'Jerash', 'Ajloun', 'Madaba', 'Umm Qais', 'Umm al Jimal']
+JORDAN_BODIES = ['وزارة السياحة والآثار الأردنية', 'وزارة السياحة الأردنية', 'هيئة تنشيط السياحة الأردنية', 'دائرة الآثار العامة الأردنية', 'Jordan Tourism Board', 'Jordanian Tourism Board', 'Jordan Ministry of Tourism', 'Jordanian Ministry of Tourism', 'Jordan Department of Antiquities', 'Department of Antiquities of Jordan']
+JORDAN_PEOPLE = ['عماد حجازين', 'عماد الحجازين', 'Imad Hijazin', 'Emad Hijazin', 'Imad Hijazeen', 'Emad Hijazeen', 'Imad Hijazine', 'Emad Hijazine']
+TOURISM_TERMS = ['tourism', 'tourist', 'tourists', 'travel', 'hotel', 'hotels', 'resort', 'resorts', 'destination', 'visitors', 'السياحة', 'السياحه', 'للسياحة', 'بالسياحة', 'والسياحة', 'السياحي', 'السياحية', 'السياحيه', 'السياح', 'سياح', 'زوار', 'الزوار', 'فندق', 'فنادق', 'الفنادق', 'منتجع', 'المنتجعات']
+INDIRECT_TERMS = ['airport', 'flights', 'airline', 'heritage', 'archaeology', 'archaeological', 'festival', 'museum', 'conservation', 'nature reserve', 'مطار', 'المطار', 'الطيران', 'طيران', 'رحلات', 'الرحلات', 'الرحلات الجوية', 'تراث', 'التراث', 'آثار', 'الآثار', 'الأثرية', 'اثرية', 'مهرجان', 'مهرجانات', 'متحف', 'محمية', 'محميات']
+FOREIGN_TERMS = ['Egypt', 'Egyptian', 'Cairo', 'Luxor', 'Aswan', 'Sharm el Sheikh', 'Hurghada', 'مصر', 'المصرية', 'المصري', 'القاهرة', 'الاقصر', 'اسوان', 'شرم الشيخ', 'الغردقة', 'Saudi', 'السعودية', 'Dubai', 'دبي', 'Turkey', 'تركيا', 'Lebanon', 'لبنان']
+
+def jordan_anchor(text):
+    text = normalized(text)
+    return has_terms(text, ['الأردن', 'الأردني', 'الأردنية', 'الأردنيين', 'Jordan', 'Jordanian']) or has_terms(text, JORDAN_PLACES + JORDAN_BODIES + JORDAN_PEOPLE + SEARCH_TOPICS['jannah']['ar'] + SEARCH_TOPICS['jannah']['en'])
+
+def relevance_details(row):
     title = row.get('title', '').rsplit(' - ', 1)[0]
+    lead = normalized(title)
     text = normalized(article_evidence(row))
-    official = has_terms(text, ['وزارة السياحة والآثار', 'هيئة تنشيط السياحة', 'دائرة الآثار العامة', 'دائرة الآثار العامة الأردنية', 'Jordan Department of Antiquities', 'Department of Antiquities of Jordan', 'أردننا جنة', 'عماد حجازين', 'Jordan Tourism Board', 'Jordan Ministry of Tourism'])
-    destination = has_terms(text, ['Wadi Rum', 'Aqaba', 'Jerash', 'Ajloun', 'Madaba', 'Umm Qais', 'Umm al Jimal', 'Baptism Site', 'وادي رم', 'العقبة', 'جرش', 'عجلون', 'مادبا', 'أم قيس', 'أم الجمال', 'المغطس', 'البتراء', 'البترا'])
-    # Petra alone may be a person's name; require Jordan or a tourism context below.
-    country = has_terms(text, ['Jordan', 'Jordanian', 'الأردن', 'الأردنية', 'الأردني', 'الاردن'])
-    direct = has_terms(text, ['tourism', 'tourist', 'tourists', 'travel', 'hotel', 'hotels', 'resort', 'resorts', 'destination', 'visitors', 'سياحة', 'السياحة', 'السياحي', 'السياحية', 'السياحيه', 'السياح', 'سياح', 'زوار', 'الزوار', 'فندق', 'فنادق', 'الفنادق', 'منتجع', 'المنتجعات'])
-    indirect = has_terms(text, ['airport', 'flights', 'airline', 'heritage', 'archaeology', 'archaeological', 'festival', 'museum', 'conservation', 'nature reserve', 'مطار', 'المطار', 'الطيران', 'طيران', 'رحلات', 'الرحلات', 'الرحلات الجوية', 'تراث', 'التراث', 'آثار', 'الآثار', 'الأثرية', 'اثرية', 'مهرجان', 'مهرجانات', 'متحف', 'محمية', 'محميات'])
+    # Publisher identity and retrieval queries never establish geographic relevance.
+    if not jordan_anchor(text):
+        return 'مستبعد', 'لا توجد دلالة على الأردن أو جهة أو موقع أردني في المحتوى المتاح'
     person = bool(re.search(r'\bjordan\s+(brown|baker|spieth|pickford|henderson|love|poole|peele|peterson|chiles)\b|\bmichael jordan\b|\bair jordan\b', text))
-    named_minister = has_terms(text, KEYWORD_GROUPS['عماد حجازين'])
-    named_body = has_terms(text, SEARCH_TOPICS['tourism_board']['ar'] + ['Jordan Tourism Board', 'Jordanian Tourism Board'] + SEARCH_TOPICS['antiquities']['ar'] + SEARCH_TOPICS['antiquities']['en'] + SEARCH_TOPICS['jannah']['ar'] + SEARCH_TOPICS['jannah']['en'])
-    destination = destination or has_terms(text, SEARCH_TOPICS['aqaba']['ar'] + SEARCH_TOPICS['wadi_rum']['ar'] + SEARCH_TOPICS['petra']['ar'])
-    if official or named_minister or named_body: return 'مباشر'
-    if person and not destination: return 'مستبعد'
-    if (country or destination) and direct: return 'مباشر'
-    if (country or destination) and indirect: return 'غير مباشر'
-    if destination or (has_terms(text, ['Petra']) and direct): return 'للمراجعة'
-    if country and not person: return 'للمراجعة'
-    return 'مستبعد'
+    specific = has_terms(text, JORDAN_PLACES + JORDAN_BODIES + JORDAN_PEOPLE + SEARCH_TOPICS['jannah']['ar'] + SEARCH_TOPICS['jannah']['en'])
+    country_ar = has_terms(text, ['الأردن', 'الأردنية', 'الأردني', 'الأردنيين'])
+    country_en = has_terms(text, ['Jordanian']) or bool(re.search(r"\b(?:in|to|from|of|visit) jordan\b|\bjordan(?:'s|’s)\b|\bjordan (?:tourism|travel|tourists|hotels|flights|heritage|minister|ministry)\b", text))
+    if person and not (specific or country_ar or country_en):
+        return 'مستبعد', 'Jordan مستخدمة كاسم شخص وليس دلالة على البلد'
+    if not (specific or country_ar or country_en):
+        return 'للمراجعة', 'ذكر Jordan يحتاج تأكيد أنه البلد وليس اسم شخص'
+    # A foreign headline with only a passing Jordan mention in the body is not
+    # automatically relevant. Bilateral news and Jordanian delegations are kept.
+    if has_terms(lead, FOREIGN_TERMS) and not jordan_anchor(lead):
+        return 'للمراجعة', 'العنوان عن وجهة خارجية وذكر الأردن موجود داخل النص فقط'
+    local_official = has_terms(text, JORDAN_BODIES + JORDAN_PEOPLE + SEARCH_TOPICS['jannah']['ar'] + SEARCH_TOPICS['jannah']['en'])
+    if local_official:
+        return 'مباشر', 'يتناول جهة سياحية أردنية أو الوزير أو أردننا جنة'
+    # Evaluate topic and geography together in the headline or nearby text,
+    # rather than combining unrelated mentions from different paragraphs.
+    segments = [lead] + [normalized(x) for x in re.split(r'[.!?؟\n]+', row.get('summary', '') + '\n' + row.get('body', '')) if x.strip()]
+    for segment in segments:
+        if not jordan_anchor(segment): continue
+        if has_terms(segment, TOURISM_TERMS):
+            return 'مباشر', 'سياق سياحي مرتبط بالأردن أو أحد مواقعه في نفس المقطع'
+        if has_terms(segment, INDIRECT_TERMS):
+            return 'غير مباشر', 'طيران أو تراث أو فعالية مرتبطة بالأردن في نفس المقطع'
+    return 'للمراجعة', 'صلة بالأردن موجودة لكن ارتباطها السياحي يحتاج مراجعة'
+
+def relevance(row):
+    return relevance_details(row)[0]
 
 def impact_details(row):
     """Conservative editorial triage, not a verified economic impact assessment."""
@@ -272,7 +297,7 @@ def collect(previous=None):
 def desktop():
     import tkinter as tk
     from tkinter import ttk, messagebox, filedialog
-    root=tk.Tk(); root.title('رصد السياحة الأردنية — 0.9'); root.geometry('1150x720')
+    root=tk.Tk(); root.title('رصد السياحة الأردنية — 1.0'); root.geometry('1150x720')
     cache=pathlib.Path.home()/'JordanTourismMonitor'; cache.mkdir(exist_ok=True); path=cache/'feed.json'
     state=json.loads(path.read_text('utf-8')) if path.exists() else {'items':[]}
     inbox = queue.Queue()
@@ -321,7 +346,7 @@ def desktop():
     def show_reason(_):
         if table.selection():
             direction, reason = impact_details(shown[int(table.selection()[0])])
-            reason_note.set('سبب التصنيف: ' + direction + ' — ' + reason + ' | ' + text_status(shown[int(table.selection()[0])]))
+            reason_note.set('الصلة بالأردن: ' + relevance_details(shown[int(table.selection()[0])])[1] + ' | الاتجاه: ' + direction + ' — ' + reason + ' | ' + text_status(shown[int(table.selection()[0])]))
         else: reason_note.set('')
     table.bind('<<TreeviewSelect>>',show_reason)
     def open_item(_):
