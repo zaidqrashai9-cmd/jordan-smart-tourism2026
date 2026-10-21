@@ -219,6 +219,20 @@ def impact_details(row):
     if pos: return 'إيجابي', pos[0]
     return 'محايد', 'لا توجد دلالة واضحة على أثر إيجابي أو سلبي في العنوان والملخص'
 
+def share_message(row):
+    title = str(row.get('title', '')).strip()
+    source = str(row.get('source', '')).strip() or 'غير محدد'
+    suffix = ' - ' + source
+    if title.endswith(suffix): title = title[:-len(suffix)]
+    candidates = (row.get('article_url'), row.get('url'))
+    url = next((u for u in candidates if isinstance(u, str) and urllib.parse.urlparse(u).scheme == 'https'), None)
+    if not title or not url: raise ValueError('الخبر لا يحتوي عنوانا ورابط HTTPS صالحين')
+    return title + '\n\nالمصدر: ' + source + '\nالرابط: ' + url
+
+def whatsapp_share_url(message):
+    # Prefills a composer without selecting a recipient or sending a message.
+    return 'https://wa.me/?' + urllib.parse.urlencode({'text': message})
+
 def fetch(url):
     if urllib.parse.urlparse(url).scheme != 'https':
         raise ValueError('HTTPS is required')
@@ -258,7 +272,7 @@ def collect(previous=None):
 def desktop():
     import tkinter as tk
     from tkinter import ttk, messagebox, filedialog
-    root=tk.Tk(); root.title('رصد السياحة الأردنية — 0.8'); root.geometry('1150x720')
+    root=tk.Tk(); root.title('رصد السياحة الأردنية — 0.9'); root.geometry('1150x720')
     cache=pathlib.Path.home()/'JordanTourismMonitor'; cache.mkdir(exist_ok=True); path=cache/'feed.json'
     state=json.loads(path.read_text('utf-8')) if path.exists() else {'items':[]}
     inbox = queue.Queue()
@@ -355,6 +369,33 @@ def desktop():
             window=tk.Toplevel(root); window.title(row.get('title','نص الخبر')); window.geometry('850x600')
             text=tk.Text(window, wrap='word', font=('Arial',13)); text.pack(fill='both',expand=True)
             text.insert('1.0', row['body']); text.config(state='disabled')
+    def selected_share_message():
+        if not table.selection():
+            note.set('اختر خبرا من القائمة أولا'); return None
+        try: return share_message(shown[int(table.selection()[0])])
+        except (ValueError, IndexError) as exc:
+            note.set(str(exc)); return None
+    def copy_message():
+        message = selected_share_message()
+        if message is None: return
+        try:
+            root.clipboard_clear(); root.clipboard_append(message)
+            note.set('تم نسخ العنوان والمصدر والرابط؛ الصقها في الشخص أو المجموعة المطلوبة')
+        except tk.TclError:
+            note.set('تعذر النسخ للحافظة؛ حاول مرة أخرى')
+    def share_whatsapp():
+        message = selected_share_message()
+        if message is None: return
+        try:
+            opened = webbrowser.open(whatsapp_share_url(message))
+            if opened: note.set('اختر الشخص أو المجموعة وراجع الرسالة واضغط إرسال داخل واتساب؛ لم يرسل البرنامج أي رسالة')
+            else: note.set('تعذر فتح واتساب؛ استخدم زر نسخ الرسالة والصقها يدويا')
+        except Exception:
+            note.set('تعذر فتح واتساب؛ استخدم زر نسخ الرسالة والصقها يدويا')
+    share_bar=ttk.Frame(root); share_bar.pack(fill='x',padx=16,pady=5)
+    ttk.Button(share_bar,text='مشاركة على واتساب',command=share_whatsapp).pack(side='right')
+    ttk.Button(share_bar,text='نسخ الرسالة',command=copy_message).pack(side='right',padx=8)
+    ttk.Label(share_bar,text='للخبر المحدد • تختار المستلم وتضغط إرسال بنفسك داخل واتساب').pack(side='right',padx=8)
     def export():
         target=filedialog.asksaveasfilename(defaultextension='.csv',filetypes=[('CSV','*.csv')])
         if target:
