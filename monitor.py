@@ -1,5 +1,6 @@
 """Jordan Tourism Monitor: standard-library collector and Windows desktop client."""
 from email.utils import parsedate_to_datetime
+import queue
 import argparse, concurrent.futures, csv, datetime as dt, hashlib, json, pathlib, re, threading, urllib.parse, urllib.request, webbrowser, xml.etree.ElementTree as ET
 QUERIES = ['"وزارة السياحة والآثار" الأردن', '"عماد حجازين"', '"هيئة تنشيط السياحة"', '"أردننا جنة"', 'السياحة الأردن', 'Jordan tourism', 'Jordan travel Petra Wadi Rum', 'Jordan tourism Aqaba Dead Sea Jerash']
 JORDAN_TIME = dt.timezone(dt.timedelta(hours=3), 'Amman')
@@ -38,23 +39,34 @@ def parse_feed(data, query):
         if not title or urllib.parse.urlparse(link).scheme not in ('https','http'): continue
         rows.append(dict(id=hashlib.sha256(link.encode()).hexdigest(),title=title,url=link,source=item.findtext('source',''),published=item.findtext('pubDate',''),query=query,discovered=dt.datetime.now(dt.timezone.utc).isoformat()))
     return rows
+def sorted_articles(rows):
+    floor = dt.datetime.min.replace(tzinfo=dt.timezone.utc)
+    return sorted(rows, key=lambda r: publication_time(r) or floor, reverse=True)
+
 def collect(previous=None):
     rows={r['id']:r for r in (previous or {}).get('items',[])}; status=[]
-    def one(q):
-        url='https://news.google.com/rss/search?'+urllib.parse.urlencode(dict(q=q+' when:7d',hl='ar',gl='JO',ceid='JO:ar'))
+    jobs = [(q, window) for window in ('1d', '7d') for q in QUERIES]
+    def one(job):
+        q, window = job
+        english = q.isascii()
+        url='https://news.google.com/rss/search?'+urllib.parse.urlencode(dict(q=q+' when:'+window,hl='en' if english else 'ar',gl='US' if english else 'JO',ceid='US:en' if english else 'JO:ar'))
         try: return q,parse_feed(fetch(url),q),None
         except Exception as e: return q,[],str(e)
     with concurrent.futures.ThreadPoolExecutor(max_workers=4) as pool:
-        for q,items,error in pool.map(one,QUERIES):
-            for r in items: rows.setdefault(r['id'],r)
+        for q,items,error in pool.map(one,jobs):
+            for r in items:
+                old = rows.get(r['id'])
+                if old: r['discovered'] = old.get('discovered', r['discovered'])
+                rows[r['id']] = r
             status.append(dict(query=q,count=len(items),error=error))
-    return dict(updated=dt.datetime.now(dt.timezone.utc).isoformat(),items=sorted(rows.values(),key=lambda r:r['discovered'],reverse=True),sources=status,social_coverage='Not connected: Facebook, Instagram, X')
+    return dict(updated=dt.datetime.now(dt.timezone.utc).isoformat(),items=sorted_articles(rows.values()),sources=status,social_coverage='Not connected: Facebook, Instagram, X')
 def desktop():
     import tkinter as tk
     from tkinter import ttk, messagebox, filedialog
-    root=tk.Tk(); root.title('رصد السياحة الأردنية — 0.2'); root.geometry('1150x720')
+    root=tk.Tk(); root.title('رصد السياحة الأردنية — 0.3'); root.geometry('1150x720')
     cache=pathlib.Path.home()/'JordanTourismMonitor'; cache.mkdir(exist_ok=True); path=cache/'feed.json'
     state=json.loads(path.read_text('utf-8')) if path.exists() else {'items':[]}
+    inbox = queue.Queue()
     shown=[]; period=tk.StringVar(value='الكل'); count=tk.StringVar(); keyword=tk.StringVar(); endpoint=tk.StringVar(); note=tk.StringVar(value='الأخبار عبر RSS • فيسبوك وإنستغرام وX غير مربوطين بعد')
     ttk.Label(root,text='رصد السياحة الأردنية',font=('Arial',22)).pack(pady=12)
     bar=ttk.Frame(root); bar.pack(fill='x',padx=16)
@@ -63,15 +75,15 @@ def desktop():
     ttk.Combobox(bar,textvariable=period,values=PERIODS,state='readonly',width=18).pack(side='right')
     ttk.Label(root,textvariable=count).pack(pady=4)
     table=ttk.Treeview(root,columns=('title','source','published'),show='headings')
-    for c,label,width in [('title','العنوان',650),('source','المصدر',180),('published','وقت النشر كما ورد من المصدر',270)]: table.heading(c,text=label); table.column(c,width=width)
+    for c,label,width in [('title','العنوان',650),('source','المصدر',180),('published','وقت النشر — الأردن',270)]: table.heading(c,text=label); table.column(c,width=width)
     table.pack(fill='both',expand=True,padx=16,pady=10)
     def render(*_):
         table.delete(*table.get_children()); shown.clear()
         now = dt.datetime.now(dt.timezone.utc)
-        for row in state['items']:
+        for row in sorted_articles(state['items']):
             if not matches_period(row, period.get(), now): continue
             if keyword.get().casefold() in (row['title']+' '+row['source']).casefold():
-                shown.append(row); table.insert('', 'end',iid=str(len(shown)-1),values=(row['title'],row['source'],row['published']))
+                shown.append(row); table.insert('', 'end',iid=str(len(shown)-1),values=(row['title'],row['source'],publication_time(row).astimezone(JORDAN_TIME).strftime('%Y-%m-%d %H:%M') if publication_time(row) else 'غير معروف'))
         count.set(f'المعروض: {len(shown)} من {len(state["items"])} | بتوقيت الأردن | حسب وقت النشر؛ التواريخ غير المعروفة تظهر في الكل فقط')
     def open_item(_):
         if table.selection(): webbrowser.open(shown[int(table.selection()[0])]['url'])
@@ -80,19 +92,25 @@ def desktop():
         nonlocal state
         state=result; path.write_text(json.dumps(state,ensure_ascii=False),encoding='utf-8'); render()
         errors=sum(bool(x.get('error')) for x in state.get('sources',[]))
-        note.set(f"المواد: {len(state['items'])} | آخر محاولة: {state.get('updated','')} | مصادر تعذّر تحديثها: {errors}")
+        today = sum(matches_period(r, 'اليوم') for r in state['items'])
+        latest = next((publication_time(r) for r in sorted_articles(state['items']) if publication_time(r)), None)
+        latest_label = latest.astimezone(JORDAN_TIME).strftime('%Y-%m-%d %H:%M') if latest else 'غير معروف'
+        current = dt.datetime.now(JORDAN_TIME).strftime('%Y-%m-%d %H:%M')
+        prefix = 'فشل جلب جميع عمليات البحث؛ المعروض أرشيف محفوظ' if errors and errors == len(state.get('sources', [])) else ('تحديث جزئي' if errors else 'تم التحديث')
+        note.set(f"{prefix} | آخر محاولة على الجهاز: {current} | نتائج اليوم: {today} | أحدث خبر: {latest_label} | عمليات بحث متعذرة: {errors}")
         refresh.config(state='normal')
     def update():
-        refresh.config(state='disabled'); note.set('جارٍ التحديث...')
+        if str(refresh.cget('state')) == 'disabled': return
+        refresh.config(state='disabled'); note.set('جارٍ جلب آخر الأخبار...')
+        remote = endpoint.get().strip()
+        snapshot = state
         def work():
             try:
-                result=json.loads(fetch(endpoint.get())) if endpoint.get().strip() else collect(state)
+                result=json.loads(fetch(remote)) if remote else collect(snapshot)
                 if not isinstance(result.get('items'),list): raise ValueError('Invalid feed')
-                root.after(0,lambda:done(result))
+                inbox.put(('ok', result))
             except Exception as e:
-                msg=str(e)
-                def fail(): note.set(msg); refresh.config(state='normal')
-                root.after(0,fail)
+                inbox.put(('error', str(e)))
         threading.Thread(target=work,daemon=True).start()
     def export():
         target=filedialog.asksaveasfilename(defaultextension='.csv',filetypes=[('CSV','*.csv')])
@@ -103,10 +121,22 @@ def desktop():
     refresh=ttk.Button(bar,text='تحديث',command=update); refresh.pack(side='left'); ttk.Button(bar,text='تصدير CSV',command=export).pack(side='left')
     ttk.Label(root,text='رابط HTTPS لنتائج الخدمة السحابية (اختياري؛ تركه فارغًا يجمع الأخبار على الجهاز)').pack()
     ttk.Entry(root,textvariable=endpoint,width=100).pack(pady=5); ttk.Label(root,textvariable=note,wraplength=1050).pack(pady=8)
+    def poll():
+        try:
+            kind, payload = inbox.get_nowait()
+            if kind == 'ok': done(payload)
+            else:
+                note.set('تعذّر التحديث؛ النتائج المعروضة محفوظة: ' + payload)
+                refresh.config(state='normal')
+        except queue.Empty: pass
+        root.after(100, poll)
+    def auto_refresh():
+        update()
+        root.after(15 * 60 * 1000, auto_refresh)
     def tick():
         render()
         root.after(60000, tick)
-    tick(); root.mainloop()
+    tick(); poll(); root.after(300, auto_refresh); root.mainloop()
 if __name__=='__main__':
     p=argparse.ArgumentParser(); p.add_argument('--collect',action='store_true'); p.add_argument('--output',default='feed.json'); a=p.parse_args()
     if a.collect:
