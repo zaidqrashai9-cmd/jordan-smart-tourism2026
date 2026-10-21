@@ -13,7 +13,7 @@ QUERIES = [
     '"Jordan" (airport OR flights OR archaeology OR heritage OR hotels)'
 ]
 JORDAN_TIME = dt.timezone(dt.timedelta(hours=3), 'Amman')
-PERIODS = ('الكل', 'اليوم', 'آخر 3 ساعات', 'آخر 9 ساعات')
+PERIODS = ('الكل', 'اليوم', 'أمس', 'آخر 3 ساعات', 'آخر 9 ساعات')
 def publication_time(row):
     try:
         value = parsedate_to_datetime(row.get('published', ''))
@@ -30,11 +30,27 @@ def matches_period(row, period, now=None):
     published = publication_time(row)
     if published is None or published > now:
         return False
+    if period == 'أمس':
+        end = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        return end - dt.timedelta(days=1) <= published < end
     if period == 'اليوم':
         start = now.replace(hour=0, minute=0, second=0, microsecond=0)
     else:
         start = now - dt.timedelta(hours={'آخر 3 ساعات': 3, 'آخر 9 ساعات': 9}[period])
     return start <= published <= now
+
+def article_language(row):
+    # Use the headline, excluding the publisher suffix. Mixed titles use the
+    # dominant script; ambiguous titles remain visible in the All view.
+    title = row.get('title', '').rsplit(' - ', 1)[0]
+    arabic = sum('ARABIC' in unicodedata.name(c, '') and c.isalpha() for c in title)
+    latin = sum('LATIN' in unicodedata.name(c, '') and c.isalpha() for c in title)
+    if arabic > latin: return 'AR'
+    if latin > arabic: return 'EN'
+    return 'UNKNOWN'
+
+def matches_language(row, language):
+    return language == 'الكل / All' or article_language(row) == language
 
 def normalized(text):
     text = unicodedata.normalize('NFKC', text).casefold()
@@ -99,17 +115,22 @@ def collect(previous=None):
 def desktop():
     import tkinter as tk
     from tkinter import ttk, messagebox, filedialog
-    root=tk.Tk(); root.title('رصد السياحة الأردنية — 0.4'); root.geometry('1150x720')
+    root=tk.Tk(); root.title('رصد السياحة الأردنية — 0.5'); root.geometry('1150x720')
     cache=pathlib.Path.home()/'JordanTourismMonitor'; cache.mkdir(exist_ok=True); path=cache/'feed.json'
     state=json.loads(path.read_text('utf-8')) if path.exists() else {'items':[]}
     inbox = queue.Queue()
+    language=tk.StringVar(value='الكل / All')
     scope=tk.StringVar(value='مرتبط بالسياحة'); shown=[]; period=tk.StringVar(value='الكل'); count=tk.StringVar(); keyword=tk.StringVar(); endpoint=tk.StringVar(); note=tk.StringVar(value='الأخبار عبر RSS • فيسبوك وإنستغرام وX غير مربوطين بعد')
     ttk.Label(root,text='رصد السياحة الأردنية',font=('Arial',22)).pack(pady=12)
     bar=ttk.Frame(root); bar.pack(fill='x',padx=16)
     ttk.Label(bar,text='بحث').pack(side='right'); ttk.Entry(bar,textvariable=keyword,width=45).pack(side='right')
     ttk.Label(bar,text='الفترة').pack(side='right',padx=8)
     ttk.Combobox(bar,textvariable=period,values=PERIODS,state='readonly',width=18).pack(side='right')
-    ttk.Combobox(bar,textvariable=scope,values=('مرتبط بالسياحة', 'مباشر', 'غير مباشر', 'للمراجعة', 'مستبعد'),state='readonly',width=18).pack(side='right',padx=8)
+    filters=ttk.Frame(root); filters.pack(fill='x',padx=16,pady=6)
+    ttk.Label(filters,text='الصلة').pack(side='right',padx=8)
+    ttk.Combobox(filters,textvariable=scope,values=('مرتبط بالسياحة', 'مباشر', 'غير مباشر', 'للمراجعة', 'مستبعد'),state='readonly',width=18).pack(side='right',padx=8)
+    ttk.Label(filters,text='اللغة / Language').pack(side='right',padx=8)
+    ttk.Combobox(filters,textvariable=language,values=('الكل / All', 'EN', 'AR'),state='readonly',width=14).pack(side='right')
     ttk.Label(root,textvariable=count).pack(pady=4)
     table=ttk.Treeview(root,columns=('title','source','published','relevance'),show='headings')
     for c,label,width in [('title','العنوان',650),('source','المصدر',180),('published','وقت النشر — الأردن',170),('relevance','الصلة',100)]: table.heading(c,text=label); table.column(c,width=width)
@@ -123,12 +144,13 @@ def desktop():
                 if label not in ('مباشر', 'غير مباشر'): continue
             elif label != scope.get(): continue
             if not matches_period(row, period.get(), now): continue
+            if not matches_language(row, language.get()): continue
             if keyword.get().casefold() in (row['title']+' '+row['source']).casefold():
                 shown.append(row); table.insert('', 'end',iid=str(len(shown)-1),values=(row['title'],row['source'],publication_time(row).astimezone(JORDAN_TIME).strftime('%Y-%m-%d %H:%M') if publication_time(row) else 'غير معروف',label))
         count.set(f'المعروض: {len(shown)} من {len(state["items"])} | بتوقيت الأردن | حسب وقت النشر؛ التواريخ غير المعروفة تظهر في الكل فقط')
     def open_item(_):
         if table.selection(): webbrowser.open(shown[int(table.selection()[0])]['url'])
-    table.bind('<Double-1>',open_item); keyword.trace_add('write',render); period.trace_add('write',render); scope.trace_add('write',render)
+    table.bind('<Double-1>',open_item); keyword.trace_add('write',render); period.trace_add('write',render); scope.trace_add('write',render); language.trace_add('write',render)
     def done(result):
         nonlocal state
         state=result; path.write_text(json.dumps(state,ensure_ascii=False),encoding='utf-8'); render()
