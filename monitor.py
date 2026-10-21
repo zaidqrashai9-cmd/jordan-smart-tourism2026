@@ -4,9 +4,22 @@ import html
 import unicodedata
 import queue
 import argparse, concurrent.futures, csv, datetime as dt, hashlib, json, pathlib, re, threading, urllib.parse, urllib.request, webbrowser, xml.etree.ElementTree as ET
+KEYWORD_GROUPS = {
+    'عماد حجازين': ['عماد حجازين'],
+    'هيئة تنشيط السياحة الأردنية': ['هيئة تنشيط السياحة', 'Jordan Tourism Board'],
+    'دائرة الآثار العامة الأردنية': ['دائرة الآثار العامة', 'دائرة الاثار', 'Jordan Department of Antiquities', 'Department of Antiquities of Jordan'],
+    'البترا': ['البترا', 'البتراء', 'Petra'],
+    'العقبة': ['العقبة', 'Aqaba'],
+    'أردننا جنة': ['أردننا جنة', 'Urdunna Jannah', 'Urdona Jannah'],
+    'وزارة السياحة والآثار الأردنية': ['وزارة السياحة والآثار', 'Jordan Ministry of Tourism', 'Ministry of Tourism and Antiquities'],
+}
+REFRESH_INTERVAL_MS = 60 * 60 * 1000
 QUERIES = [
-    '"وزارة السياحة والآثار" "الأردن"', '"عماد حجازين"',
-    '"هيئة تنشيط السياحة"', '"أردننا جنة"', '"السياحة" "الأردن"',
+    '"وزارة السياحة والآثار الأردنية"', '"عماد حجازين"',
+    '"هيئة تنشيط السياحة الأردنية"', '"دائرة الآثار العامة الأردنية"',
+    '"البترا"', '"العقبة"', '"أردننا جنة"',
+    '"وزارة السياحة والآثار" "الأردن"', '"هيئة تنشيط السياحة"',
+    '"دائرة الآثار العامة"', '"البتراء"', '"السياحة" "الأردن"',
     '"Jordan tourism"', '"Jordan travel" -"Michael Jordan" -"Jordan Brown" -"Jordan Baker"',
     '("Petra" OR "Wadi Rum" OR "Aqaba" OR "Jerash" OR "Dead Sea") (tourism OR hotel OR heritage OR visitors)',
     '"الأردن" (طيران OR فنادق OR آثار OR مهرجان OR زوار)',
@@ -60,11 +73,16 @@ def normalized(text):
 def has_terms(text, terms):
     return any(re.search(r'(?<!\w)' + re.escape(normalized(term)) + r'(?!\w)', text) for term in terms)
 
+def matches_keyword(row, selected):
+    if selected == 'كل الكلمات': return True
+    text = normalized(row.get('title', '').rsplit(' - ', 1)[0] + ' ' + row.get('summary', ''))
+    return has_terms(text, KEYWORD_GROUPS.get(selected, [selected]))
+
 def relevance(row):
     # Queries and publisher names are not evidence that an article is about Jordan.
     title = row.get('title', '').rsplit(' - ', 1)[0]
     text = normalized(title + ' ' + row.get('summary', ''))
-    official = has_terms(text, ['وزارة السياحة والآثار', 'هيئة تنشيط السياحة', 'أردننا جنة', 'عماد حجازين', 'Jordan Tourism Board', 'Jordan Ministry of Tourism'])
+    official = has_terms(text, ['وزارة السياحة والآثار', 'هيئة تنشيط السياحة', 'دائرة الآثار العامة', 'دائرة الآثار العامة الأردنية', 'Jordan Department of Antiquities', 'Department of Antiquities of Jordan', 'أردننا جنة', 'عماد حجازين', 'Jordan Tourism Board', 'Jordan Ministry of Tourism'])
     destination = has_terms(text, ['Wadi Rum', 'Aqaba', 'Jerash', 'Ajloun', 'Madaba', 'Umm Qais', 'Umm al Jimal', 'Baptism Site', 'وادي رم', 'العقبة', 'جرش', 'عجلون', 'مادبا', 'أم قيس', 'أم الجمال', 'المغطس', 'البتراء', 'البترا'])
     # Petra alone may be a person's name; require Jordan or a tourism context below.
     country = has_terms(text, ['Jordan', 'Jordanian', 'الأردن', 'الأردنية', 'الأردني', 'الاردن'])
@@ -115,11 +133,12 @@ def collect(previous=None):
 def desktop():
     import tkinter as tk
     from tkinter import ttk, messagebox, filedialog
-    root=tk.Tk(); root.title('رصد السياحة الأردنية — 0.5'); root.geometry('1150x720')
+    root=tk.Tk(); root.title('رصد السياحة الأردنية — 0.6'); root.geometry('1150x720')
     cache=pathlib.Path.home()/'JordanTourismMonitor'; cache.mkdir(exist_ok=True); path=cache/'feed.json'
     state=json.loads(path.read_text('utf-8')) if path.exists() else {'items':[]}
     inbox = queue.Queue()
     language=tk.StringVar(value='الكل / All')
+    selected_keyword=tk.StringVar(value='كل الكلمات')
     scope=tk.StringVar(value='مرتبط بالسياحة'); shown=[]; period=tk.StringVar(value='الكل'); count=tk.StringVar(); keyword=tk.StringVar(); endpoint=tk.StringVar(); note=tk.StringVar(value='الأخبار عبر RSS • فيسبوك وإنستغرام وX غير مربوطين بعد')
     ttk.Label(root,text='رصد السياحة الأردنية',font=('Arial',22)).pack(pady=12)
     bar=ttk.Frame(root); bar.pack(fill='x',padx=16)
@@ -131,6 +150,8 @@ def desktop():
     ttk.Combobox(filters,textvariable=scope,values=('مرتبط بالسياحة', 'مباشر', 'غير مباشر', 'للمراجعة', 'مستبعد'),state='readonly',width=18).pack(side='right',padx=8)
     ttk.Label(filters,text='اللغة / Language').pack(side='right',padx=8)
     ttk.Combobox(filters,textvariable=language,values=('الكل / All', 'EN', 'AR'),state='readonly',width=14).pack(side='right')
+    ttk.Label(filters,text='الكلمة المفتاحية').pack(side='right',padx=8)
+    ttk.Combobox(filters,textvariable=selected_keyword,values=('كل الكلمات', *KEYWORD_GROUPS),state='readonly',width=30).pack(side='right')
     ttk.Label(root,textvariable=count).pack(pady=4)
     table=ttk.Treeview(root,columns=('title','source','published','relevance'),show='headings')
     for c,label,width in [('title','العنوان',650),('source','المصدر',180),('published','وقت النشر — الأردن',170),('relevance','الصلة',100)]: table.heading(c,text=label); table.column(c,width=width)
@@ -145,12 +166,13 @@ def desktop():
             elif label != scope.get(): continue
             if not matches_period(row, period.get(), now): continue
             if not matches_language(row, language.get()): continue
+            if not matches_keyword(row, selected_keyword.get()): continue
             if keyword.get().casefold() in (row['title']+' '+row['source']).casefold():
                 shown.append(row); table.insert('', 'end',iid=str(len(shown)-1),values=(row['title'],row['source'],publication_time(row).astimezone(JORDAN_TIME).strftime('%Y-%m-%d %H:%M') if publication_time(row) else 'غير معروف',label))
         count.set(f'المعروض: {len(shown)} من {len(state["items"])} | بتوقيت الأردن | حسب وقت النشر؛ التواريخ غير المعروفة تظهر في الكل فقط')
     def open_item(_):
         if table.selection(): webbrowser.open(shown[int(table.selection()[0])]['url'])
-    table.bind('<Double-1>',open_item); keyword.trace_add('write',render); period.trace_add('write',render); scope.trace_add('write',render); language.trace_add('write',render)
+    table.bind('<Double-1>',open_item); keyword.trace_add('write',render); period.trace_add('write',render); scope.trace_add('write',render); language.trace_add('write',render); selected_keyword.trace_add('write',render)
     def done(result):
         nonlocal state
         state=result; path.write_text(json.dumps(state,ensure_ascii=False),encoding='utf-8'); render()
@@ -182,6 +204,7 @@ def desktop():
                 w=csv.writer(f); w.writerow(['العنوان','المصدر','وقت النشر','الرابط'])
                 for r in shown: w.writerow([r['title'],r['source'],r['published'],r['url']])
     refresh=ttk.Button(bar,text='تحديث',command=update); refresh.pack(side='left'); ttk.Button(bar,text='تصدير CSV',command=export).pack(side='left')
+    ttk.Label(root,text='بحث تلقائي عند الفتح ثم كل ساعة أثناء تشغيل البرنامج • زر تحديث للبحث الآن').pack(pady=4)
     ttk.Label(root,text='رابط HTTPS لنتائج الخدمة السحابية (اختياري؛ تركه فارغًا يجمع الأخبار على الجهاز)').pack()
     ttk.Entry(root,textvariable=endpoint,width=100).pack(pady=5); ttk.Label(root,textvariable=note,wraplength=1050).pack(pady=8)
     def poll():
@@ -195,7 +218,7 @@ def desktop():
         root.after(100, poll)
     def auto_refresh():
         update()
-        root.after(15 * 60 * 1000, auto_refresh)
+        root.after(REFRESH_INTERVAL_MS, auto_refresh)
     def tick():
         render()
         root.after(60000, tick)
