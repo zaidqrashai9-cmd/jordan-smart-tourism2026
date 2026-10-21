@@ -4,14 +4,36 @@ import html
 import unicodedata
 import queue
 import argparse, concurrent.futures, csv, datetime as dt, hashlib, json, pathlib, re, threading, urllib.parse, urllib.request, webbrowser, xml.etree.ElementTree as ET
+# Search topics are independent of the small user-facing keyword dropdown.
+SEARCH_TOPICS = {
+ 'ministry': {
+  'ar': ['وزارة السياحة والآثار الأردنية', 'وزارة السياحة والاثار الاردنية', 'وزارة السياحة والآثار', 'وزارة السياحه والاثار', 'وزارة السياحة الأردنية'],
+  'en': ['Jordan Ministry of Tourism', 'Jordanian Ministry of Tourism', 'Ministry of Tourism and Antiquities']},
+ 'minister_name': {
+  'ar': ['عماد حجازين', 'عماد حجازي', 'عماد الحجازين'],
+  'en': ['Imad Hijazin', 'Emad Hijazin', 'Imad Hijazeen', 'Emad Hijazeen', 'Imad Hijazine', 'Emad Hijazine', 'Imad Hijazi', 'Emad Hijazi']},
+ 'minister_title': {
+  'ar': ['وزير السياحة والآثار الدكتور عماد حجازين', 'وزير السياحة والاثار عماد حجازين', 'وزير السياحة عماد حجازين', 'الدكتور عماد حجازين', 'د. عماد حجازين'],
+  'en': ['Tourism Minister Imad Hijazin', 'Tourism Minister Emad Hijazin', 'Dr Imad Hijazin', 'Dr Emad Hijazin']},
+ 'tourism_board': {
+  'ar': ['هيئة تنشيط السياحة الأردنية', 'هيئة تنشيط السياحة الاردنية', 'هيئة تنشيط السياحة', 'هيئة تنشيط السياحه'],
+  'en': ['Jordan Tourism Board', 'Jordanian Tourism Board', 'Visit Jordan', 'VisitJordan']},
+ 'antiquities': {
+  'ar': ['دائرة الآثار العامة الأردنية', 'دائرة الاثار العامة الاردنية', 'دائرة الآثار العامة', 'دائرة الاثار العامه'],
+  'en': ['Jordan Department of Antiquities', 'Department of Antiquities of Jordan', 'Department of Antiquities in Jordan', 'Jordanian Department of Antiquities']},
+ 'petra': {'ar': ['البترا', 'البتراء', 'بترا', 'بتراء', 'البتره'], 'en': ['Petra', 'Petra Archaeological Park', 'Rose Red City']},
+ 'aqaba': {'ar': ['العقبة', 'العقبه', 'عقبة', 'منطقة العقبة الاقتصادية الخاصة'], 'en': ['Aqaba', 'Al Aqaba', 'Aqaba Special Economic Zone']},
+ 'wadi_rum': {'ar': ['وادي رم', 'وادي رَم', 'وادي رام'], 'en': ['Wadi Rum', 'Wadi-Rum', 'Wadi Ramm', 'Valley of the Moon']},
+ 'dead_sea': {'ar': ['البحر الميت', 'البحرالميت'], 'en': ['Dead Sea', 'Dead-Sea']},
+ 'jannah': {'ar': ['أردننا جنة', 'اردننا جنة', 'أردننا جنّة', 'اردننا جنه', 'أردنناجنة'], 'en': ['Urdunna Jannah', 'Urduna Jannah', 'Urdona Jannah', 'Urdonna Janna', 'Our Jordan is Paradise']},
+ 'tourism_sector': {'ar': ['القطاع السياحي في الأردن', 'القطاع السياحي الأردني', 'قطاع السياحة الأردني', 'القطاع السياحي الاردني'], 'en': ['Jordan tourism sector', 'Jordanian tourism sector', 'tourism industry in Jordan']},
+ 'tourism_in_jordan': {'ar': ['السياحة في الأردن', 'السياحة في الاردن', 'السياحه في الاردن'], 'en': ['Tourism in Jordan', 'Travel to Jordan', 'Visit Jordan']},
+ 'jordanian_tourism': {'ar': ['السياحة الأردنية', 'السياحة الاردنية', 'السياحه الاردنيه'], 'en': ['Jordanian tourism', 'Jordan tourism']},
+}
 KEYWORD_GROUPS = {
-    'عماد حجازين': ['عماد حجازين'],
-    'هيئة تنشيط السياحة الأردنية': ['هيئة تنشيط السياحة', 'Jordan Tourism Board'],
-    'دائرة الآثار العامة الأردنية': ['دائرة الآثار العامة', 'دائرة الاثار', 'Jordan Department of Antiquities', 'Department of Antiquities of Jordan'],
-    'البترا': ['البترا', 'البتراء', 'Petra'],
-    'العقبة': ['العقبة', 'Aqaba'],
-    'أردننا جنة': ['أردننا جنة', 'Urdunna Jannah', 'Urdona Jannah'],
-    'وزارة السياحة والآثار الأردنية': ['وزارة السياحة والآثار', 'Jordan Ministry of Tourism', 'Ministry of Tourism and Antiquities'],
+ 'وزارة السياحة والآثار الأردنية': SEARCH_TOPICS['ministry']['ar'] + SEARCH_TOPICS['ministry']['en'],
+ 'عماد حجازين': SEARCH_TOPICS['minister_name']['ar'] + SEARCH_TOPICS['minister_name']['en'],
+ 'وزير السياحة والآثار الدكتور عماد حجازين': SEARCH_TOPICS['minister_title']['ar'] + SEARCH_TOPICS['minister_title']['en'],
 }
 REFRESH_INTERVAL_MS = 60 * 60 * 1000
 QUERIES = [
@@ -25,6 +47,20 @@ QUERIES = [
     '"الأردن" (طيران OR فنادق OR آثار OR مهرجان OR زوار)',
     '"Jordan" (airport OR flights OR archaeology OR heritage OR hotels)'
 ]
+def expanded_queries():
+    # Small OR batches avoid one oversized query and keep original searches.
+    result = list(QUERIES)
+    for topic, langs in SEARCH_TOPICS.items():
+        for lang, variants in langs.items():
+            for i in range(0, len(variants), 4):
+                terms = ' OR '.join('"' + term + '"' for term in variants[i:i + 4])
+                query = '(' + terms + ')'
+                # Ambiguous English place/institution names need a Jordan anchor.
+                if lang == 'en' and topic in ('ministry', 'antiquities', 'petra', 'aqaba', 'wadi_rum', 'dead_sea'):
+                    query += ' (Jordan OR Jordanian)'
+                result.append(query)
+    return list(dict.fromkeys(result))
+
 JORDAN_TIME = dt.timezone(dt.timedelta(hours=3), 'Amman')
 PERIODS = ('الكل', 'اليوم', 'أمس', 'آخر 3 ساعات', 'آخر 9 ساعات')
 def publication_time(row):
@@ -68,7 +104,8 @@ def matches_language(row, language):
 def normalized(text):
     text = unicodedata.normalize('NFKC', text).casefold()
     text = re.sub(r'[\u064b-\u065f\u0670ـ]', '', text)
-    return text.translate(str.maketrans('أإآى', 'اااي'))
+    text = text.translate(str.maketrans('أإآى', 'اااي'))
+    return re.sub(r'\s+', ' ', text).strip()
 
 def has_terms(text, terms):
     return any(re.search(r'(?<!\w)' + re.escape(normalized(term)) + r'(?!\w)', text) for term in terms)
@@ -76,6 +113,8 @@ def has_terms(text, terms):
 def matches_keyword(row, selected):
     if selected == 'كل الكلمات': return True
     text = normalized(row.get('title', '').rsplit(' - ', 1)[0] + ' ' + row.get('summary', ''))
+    if selected == 'وزير السياحة والآثار الدكتور عماد حجازين':
+        return has_terms(text, KEYWORD_GROUPS['عماد حجازين']) and has_terms(text, ['وزير السياحة', 'وزير السياحة والآثار', 'tourism minister', 'minister of tourism'])
     return has_terms(text, KEYWORD_GROUPS.get(selected, [selected]))
 
 def relevance(row):
@@ -89,7 +128,10 @@ def relevance(row):
     direct = has_terms(text, ['tourism', 'tourist', 'tourists', 'travel', 'hotel', 'hotels', 'resort', 'resorts', 'destination', 'visitors', 'سياحة', 'السياحة', 'السياحي', 'السياحية', 'السياحيه', 'السياح', 'سياح', 'زوار', 'الزوار', 'فندق', 'فنادق', 'الفنادق', 'منتجع', 'المنتجعات'])
     indirect = has_terms(text, ['airport', 'flights', 'airline', 'heritage', 'archaeology', 'archaeological', 'festival', 'museum', 'conservation', 'nature reserve', 'مطار', 'المطار', 'الطيران', 'طيران', 'رحلات', 'تراث', 'التراث', 'آثار', 'الآثار', 'الأثرية', 'اثرية', 'مهرجان', 'مهرجانات', 'متحف', 'محمية', 'محميات'])
     person = bool(re.search(r'\bjordan\s+(brown|baker|spieth|pickford|henderson|love|poole|peele|peterson|chiles)\b|\bmichael jordan\b|\bair jordan\b', text))
-    if official: return 'مباشر'
+    named_minister = has_terms(text, KEYWORD_GROUPS['عماد حجازين'])
+    named_body = has_terms(text, SEARCH_TOPICS['tourism_board']['ar'] + ['Jordan Tourism Board', 'Jordanian Tourism Board'] + SEARCH_TOPICS['antiquities']['ar'] + SEARCH_TOPICS['antiquities']['en'] + SEARCH_TOPICS['jannah']['ar'] + SEARCH_TOPICS['jannah']['en'])
+    destination = destination or has_terms(text, SEARCH_TOPICS['aqaba']['ar'] + SEARCH_TOPICS['wadi_rum']['ar'] + SEARCH_TOPICS['petra']['ar'])
+    if official or named_minister or named_body: return 'مباشر'
     if person and not destination: return 'مستبعد'
     if (country or destination) and direct: return 'مباشر'
     if (country or destination) and indirect: return 'غير مباشر'
@@ -115,7 +157,7 @@ def sorted_articles(rows):
 
 def collect(previous=None):
     rows={r['id']:r for r in (previous or {}).get('items',[])}; status=[]
-    jobs = [(q, window) for window in ('1d', '7d') for q in QUERIES]
+    jobs = [(q, window) for window in ('1d', '7d') for q in expanded_queries()]
     def one(job):
         q, window = job
         english = q.isascii()
@@ -133,7 +175,7 @@ def collect(previous=None):
 def desktop():
     import tkinter as tk
     from tkinter import ttk, messagebox, filedialog
-    root=tk.Tk(); root.title('رصد السياحة الأردنية — 0.6'); root.geometry('1150x720')
+    root=tk.Tk(); root.title('رصد السياحة الأردنية — 0.7'); root.geometry('1150x720')
     cache=pathlib.Path.home()/'JordanTourismMonitor'; cache.mkdir(exist_ok=True); path=cache/'feed.json'
     state=json.loads(path.read_text('utf-8')) if path.exists() else {'items':[]}
     inbox = queue.Queue()
