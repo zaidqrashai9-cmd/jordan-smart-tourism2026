@@ -21,14 +21,14 @@ jobs:
       - name: Install packaging tool
         run: python -m pip install pyinstaller==6.16.0
       - name: Build desktop executable
-        run: python -m PyInstaller --noconfirm --clean --onefile --windowed --name JordanTourismMonitor monitor.py
+        run: python -m PyInstaller --noconfirm --clean --onedir --noupx --windowed --name JordanTourismMonitor monitor.py
       - name: Smoke test packaged executable
         run: |
-          $p = Start-Process -FilePath dist/JordanTourismMonitor.exe -ArgumentList "--help" -Wait -PassThru
+          $p = Start-Process -FilePath dist/JordanTourismMonitor/JordanTourismMonitor.exe -ArgumentList "--help" -Wait -PassThru
           if ($p.ExitCode -ne 0) { throw "Packaged executable failed" }
       - uses: actions/upload-artifact@v4
         with:
-          name: JordanTourismMonitor-Windows
-          path: dist/JordanTourismMonitor.exe
+          name: JordanTourismMonitor-Windows-Portable
+          path: dist/JordanTourismMonitor/
           if-no-files-found: error
           retention-days: 7
