@@ -36,9 +36,10 @@ SEARCH_TOPICS.update({
  'madaba': {'ar': ['مادبا', 'مأدبا', 'مادبة'], 'en': ['Madaba', 'Madabah', 'Medeba']},
  'maan': {'ar': ['معان', 'محافظة معان', 'مدينة معان'], 'en': ["Ma'an", 'Maan', 'Ma’an']},
  'irbid': {'ar': ['إربد', 'اربد', 'محافظة إربد'], 'en': ['Irbid', 'Irbid Governorate']},
+ 'karak': {'ar': ['الكرك', 'كرك', 'قلعة الكرك', 'محافظة الكرك'], 'en': ['Karak', 'Al Karak', 'Al-Karak', 'Kerak', 'Al Kerak', 'Karak Castle', 'Kerak Castle']},
  'visitors': {'ar': ['زوار', 'الزوار'], 'en': ['visitors', 'tourist arrivals']},
 })
-REGIONAL_SEARCH_TOPICS = {'ajloun', 'jerash', 'madaba', 'maan', 'irbid', 'visitors'}
+REGIONAL_SEARCH_TOPICS = {'ajloun', 'jerash', 'madaba', 'maan', 'irbid', 'karak', 'visitors'}
 RETENTION_DAYS = 4
 KEYWORD_GROUPS = {
  'وزارة السياحة والآثار الأردنية': SEARCH_TOPICS['ministry']['ar'] + SEARCH_TOPICS['ministry']['en'],
@@ -194,7 +195,7 @@ def matches_keyword(row, selected):
         return has_terms(text, KEYWORD_GROUPS['عماد حجازين']) and has_terms(text, ['وزير السياحة', 'وزير السياحة والآثار', 'tourism minister', 'minister of tourism'])
     return has_terms(text, KEYWORD_GROUPS.get(selected, [selected]))
 
-JORDAN_PLACES = ['العقبة', 'العقبه', 'البترا', 'البتراء', 'بتراء', 'وادي رم', 'وادي رام', 'جرش', 'عجلون', 'مادبا', 'ام قيس', 'ام الجمال', 'المغطس', 'معان', 'محافظة معان', 'مدينة معان', 'اربد', 'إربد', 'Irbid', "Ma'an", 'Ma’an', 'Aqaba', 'Wadi Rum', 'Wadi Ramm', 'Jerash', 'Ajloun', 'Madaba', 'Umm Qais', 'Umm al Jimal']
+JORDAN_PLACES = SEARCH_TOPICS['karak']['ar'] + SEARCH_TOPICS['karak']['en'] + ['العقبة', 'العقبه', 'البترا', 'البتراء', 'بتراء', 'وادي رم', 'وادي رام', 'جرش', 'عجلون', 'مادبا', 'ام قيس', 'ام الجمال', 'المغطس', 'معان', 'محافظة معان', 'مدينة معان', 'اربد', 'إربد', 'Irbid', "Ma'an", 'Ma’an', 'Aqaba', 'Wadi Rum', 'Wadi Ramm', 'Jerash', 'Ajloun', 'Madaba', 'Umm Qais', 'Umm al Jimal']
 JORDAN_BODIES = ['وزارة السياحة والآثار الأردنية', 'وزارة السياحة الأردنية', 'هيئة تنشيط السياحة الأردنية', 'دائرة الآثار العامة الأردنية', 'Jordan Tourism Board', 'Jordanian Tourism Board', 'Jordan Ministry of Tourism', 'Jordanian Ministry of Tourism', 'Jordan Department of Antiquities', 'Department of Antiquities of Jordan']
 JORDAN_PEOPLE = ['عماد حجازين', 'عماد الحجازين', 'Imad Hijazin', 'Emad Hijazin', 'Imad Hijazeen', 'Emad Hijazeen', 'Imad Hijazine', 'Emad Hijazine']
 TOURISM_TERMS = ['tourism', 'tourist', 'tourists', 'travel', 'hotel', 'hotels', 'resort', 'resorts', 'destination', 'السياحة', 'السياحه', 'للسياحة', 'بالسياحة', 'والسياحة', 'السياحي', 'السياحية', 'السياحيه', 'السياح', 'سياح', 'سياحا', 'سائح', 'سائحا', 'السائحين', 'فندق', 'فنادق', 'الفنادق', 'منتجع', 'المنتجعات']
@@ -335,7 +336,7 @@ def collect(previous=None):
 def desktop():
     import tkinter as tk
     from tkinter import ttk, messagebox, filedialog
-    root=tk.Tk(); root.title('رصد السياحة الأردنية — 1.1'); root.geometry('1150x720')
+    root=tk.Tk(); root.title('رصد السياحة الأردنية — 1.2'); root.geometry('1150x720')
     cache=pathlib.Path.home()/'JordanTourismMonitor'; cache.mkdir(exist_ok=True); path=cache/'feed.json'
     state=json.loads(path.read_text('utf-8')) if path.exists() else {'items':[]}
     state=prune_archive(state)
