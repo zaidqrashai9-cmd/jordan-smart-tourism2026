@@ -30,6 +30,16 @@ SEARCH_TOPICS = {
  'tourism_in_jordan': {'ar': ['السياحة في الأردن', 'السياحة في الاردن', 'السياحه في الاردن'], 'en': ['Tourism in Jordan', 'Travel to Jordan', 'Visit Jordan']},
  'jordanian_tourism': {'ar': ['السياحة الأردنية', 'السياحة الاردنية', 'السياحه الاردنيه'], 'en': ['Jordanian tourism', 'Jordan tourism']},
 }
+SEARCH_TOPICS.update({
+ 'ajloun': {'ar': ['عجلون', 'قلعة عجلون', 'محافظة عجلون'], 'en': ['Ajloun', 'Ajlun', 'Ajloun Castle']},
+ 'jerash': {'ar': ['جرش', 'آثار جرش', 'محافظة جرش'], 'en': ['Jerash', 'Jarash', 'Gerasa']},
+ 'madaba': {'ar': ['مادبا', 'مأدبا', 'مادبة'], 'en': ['Madaba', 'Madabah', 'Medeba']},
+ 'maan': {'ar': ['معان', 'محافظة معان', 'مدينة معان'], 'en': ["Ma'an", 'Maan', 'Ma’an']},
+ 'irbid': {'ar': ['إربد', 'اربد', 'محافظة إربد'], 'en': ['Irbid', 'Irbid Governorate']},
+ 'visitors': {'ar': ['زوار', 'الزوار'], 'en': ['visitors', 'tourist arrivals']},
+})
+REGIONAL_SEARCH_TOPICS = {'ajloun', 'jerash', 'madaba', 'maan', 'irbid', 'visitors'}
+RETENTION_DAYS = 4
 KEYWORD_GROUPS = {
  'وزارة السياحة والآثار الأردنية': SEARCH_TOPICS['ministry']['ar'] + SEARCH_TOPICS['ministry']['en'],
  'عماد حجازين': SEARCH_TOPICS['minister_name']['ar'] + SEARCH_TOPICS['minister_name']['en'],
@@ -58,6 +68,12 @@ def expanded_queries():
                 # Ambiguous English place/institution names need a Jordan anchor.
                 if lang == 'en' and topic in ('ministry', 'antiquities', 'petra', 'aqaba', 'wadi_rum', 'dead_sea'):
                     query += ' (Jordan OR Jordanian)'
+                if topic in REGIONAL_SEARCH_TOPICS:
+                    if lang == 'ar':
+                        query += ' (سياحة OR السياحة OR سياحي OR سياحية OR سياح OR آثار OR متحف OR فندق OR فنادق OR تراث OR مهرجان)'
+                        if topic == 'visitors': query += ' (الأردن OR الاردن)'
+                    else:
+                        query += ' (Jordan OR Jordanian) (tourism OR tourists OR hotel OR heritage OR archaeology OR museum OR festival)'
                 result.append(query)
     return list(dict.fromkeys(result))
 
@@ -71,6 +87,26 @@ def publication_time(row):
         return value.astimezone(dt.timezone.utc)
     except (ValueError, TypeError, OverflowError):
         return None
+
+def prune_archive(data, now=None):
+    now = now or dt.datetime.now(dt.timezone.utc)
+    cutoff = now - dt.timedelta(days=RETENTION_DAYS)
+    result = dict(data)
+    kept = []
+    for original in data.get('items', []):
+        row = dict(original)
+        timestamp = publication_time(row)
+        if timestamp is None:
+            try:
+                discovered = dt.datetime.fromisoformat(row.get('discovered', '').replace('Z', '+00:00'))
+                timestamp = discovered if discovered.tzinfo else None
+            except (ValueError, TypeError): pass
+            if timestamp is None:
+                row['discovered'] = now.isoformat()
+                timestamp = now
+        if timestamp >= cutoff: kept.append(row)
+    result['items'] = kept
+    return result
 
 def matches_period(row, period, now=None):
     if period == 'الكل':
@@ -158,11 +194,11 @@ def matches_keyword(row, selected):
         return has_terms(text, KEYWORD_GROUPS['عماد حجازين']) and has_terms(text, ['وزير السياحة', 'وزير السياحة والآثار', 'tourism minister', 'minister of tourism'])
     return has_terms(text, KEYWORD_GROUPS.get(selected, [selected]))
 
-JORDAN_PLACES = ['العقبة', 'العقبه', 'البترا', 'البتراء', 'بتراء', 'وادي رم', 'وادي رام', 'جرش', 'عجلون', 'مادبا', 'ام قيس', 'ام الجمال', 'المغطس', 'Aqaba', 'Wadi Rum', 'Wadi Ramm', 'Jerash', 'Ajloun', 'Madaba', 'Umm Qais', 'Umm al Jimal']
+JORDAN_PLACES = ['العقبة', 'العقبه', 'البترا', 'البتراء', 'بتراء', 'وادي رم', 'وادي رام', 'جرش', 'عجلون', 'مادبا', 'ام قيس', 'ام الجمال', 'المغطس', 'معان', 'محافظة معان', 'مدينة معان', 'اربد', 'إربد', 'Irbid', "Ma'an", 'Ma’an', 'Aqaba', 'Wadi Rum', 'Wadi Ramm', 'Jerash', 'Ajloun', 'Madaba', 'Umm Qais', 'Umm al Jimal']
 JORDAN_BODIES = ['وزارة السياحة والآثار الأردنية', 'وزارة السياحة الأردنية', 'هيئة تنشيط السياحة الأردنية', 'دائرة الآثار العامة الأردنية', 'Jordan Tourism Board', 'Jordanian Tourism Board', 'Jordan Ministry of Tourism', 'Jordanian Ministry of Tourism', 'Jordan Department of Antiquities', 'Department of Antiquities of Jordan']
 JORDAN_PEOPLE = ['عماد حجازين', 'عماد الحجازين', 'Imad Hijazin', 'Emad Hijazin', 'Imad Hijazeen', 'Emad Hijazeen', 'Imad Hijazine', 'Emad Hijazine']
-TOURISM_TERMS = ['tourism', 'tourist', 'tourists', 'travel', 'hotel', 'hotels', 'resort', 'resorts', 'destination', 'visitors', 'السياحة', 'السياحه', 'للسياحة', 'بالسياحة', 'والسياحة', 'السياحي', 'السياحية', 'السياحيه', 'السياح', 'سياح', 'زوار', 'الزوار', 'فندق', 'فنادق', 'الفنادق', 'منتجع', 'المنتجعات']
-INDIRECT_TERMS = ['airport', 'flights', 'airline', 'heritage', 'archaeology', 'archaeological', 'festival', 'museum', 'conservation', 'nature reserve', 'مطار', 'المطار', 'الطيران', 'طيران', 'رحلات', 'الرحلات', 'الرحلات الجوية', 'تراث', 'التراث', 'آثار', 'الآثار', 'الأثرية', 'اثرية', 'مهرجان', 'مهرجانات', 'متحف', 'محمية', 'محميات']
+TOURISM_TERMS = ['tourism', 'tourist', 'tourists', 'travel', 'hotel', 'hotels', 'resort', 'resorts', 'destination', 'السياحة', 'السياحه', 'للسياحة', 'بالسياحة', 'والسياحة', 'السياحي', 'السياحية', 'السياحيه', 'السياح', 'سياح', 'سياحا', 'سائح', 'سائحا', 'السائحين', 'فندق', 'فنادق', 'الفنادق', 'منتجع', 'المنتجعات']
+INDIRECT_TERMS = ['airport', 'flights', 'airline', 'heritage', 'archaeology', 'archaeological', 'festival', 'museum', 'conservation', 'nature reserve', 'مطار', 'المطار', 'الطيران', 'طيران', 'رحلات', 'الرحلات', 'الرحلات الجوية', 'تراث', 'التراث', 'آثار', 'الآثار', 'الأثرية', 'اثرية', 'مهرجان', 'مهرجانات', 'متحف', 'قلعة', 'مواقع اثرية', 'تلفريك', 'محمية', 'محميات']
 FOREIGN_TERMS = ['Egypt', 'Egyptian', 'Cairo', 'Luxor', 'Aswan', 'Sharm el Sheikh', 'Hurghada', 'مصر', 'المصرية', 'المصري', 'القاهرة', 'الاقصر', 'اسوان', 'شرم الشيخ', 'الغردقة', 'Saudi', 'السعودية', 'Dubai', 'دبي', 'Turkey', 'تركيا', 'Lebanon', 'لبنان']
 
 def jordan_anchor(text):
@@ -275,7 +311,7 @@ def sorted_articles(rows):
     return sorted(rows, key=lambda r: publication_time(r) or floor, reverse=True)
 
 def collect(previous=None):
-    rows={r['id']:r for r in (previous or {}).get('items',[])}; status=[]
+    rows={r['id']:r for r in prune_archive(previous or {}).get('items',[])}; status=[]
     jobs = [(q, window) for window in ('1d', '7d') for q in expanded_queries()]
     def one(job):
         q, window = job
@@ -292,14 +328,18 @@ def collect(previous=None):
                     r['discovered'] = old.get('discovered', r['discovered'])
                 rows[r['id']] = r
             status.append(dict(query=q,count=len(items),error=error))
+    rows = {r['id']: r for r in prune_archive({'items': list(rows.values())})['items']}
     enrich_pending(rows)
+    rows = {r['id']: r for r in prune_archive({'items': list(rows.values())})['items']}
     return dict(updated=dt.datetime.now(dt.timezone.utc).isoformat(),items=sorted_articles(rows.values()),sources=status,social_coverage='Not connected: Facebook, Instagram, X')
 def desktop():
     import tkinter as tk
     from tkinter import ttk, messagebox, filedialog
-    root=tk.Tk(); root.title('رصد السياحة الأردنية — 1.0'); root.geometry('1150x720')
+    root=tk.Tk(); root.title('رصد السياحة الأردنية — 1.1'); root.geometry('1150x720')
     cache=pathlib.Path.home()/'JordanTourismMonitor'; cache.mkdir(exist_ok=True); path=cache/'feed.json'
     state=json.loads(path.read_text('utf-8')) if path.exists() else {'items':[]}
+    state=prune_archive(state)
+    path.write_text(json.dumps(state,ensure_ascii=False),encoding='utf-8')
     inbox = queue.Queue()
     language=tk.StringVar(value='الكل / All')
     selected_keyword=tk.StringVar(value='كل الكلمات')
@@ -354,7 +394,7 @@ def desktop():
     table.bind('<Double-1>',open_item); keyword.trace_add('write',render); period.trace_add('write',render); scope.trace_add('write',render); language.trace_add('write',render); selected_keyword.trace_add('write',render); impact.trace_add('write',render)
     def done(result):
         nonlocal state
-        state=result; path.write_text(json.dumps(state,ensure_ascii=False),encoding='utf-8'); render()
+        state=prune_archive(result); path.write_text(json.dumps(state,ensure_ascii=False),encoding='utf-8'); render()
         errors=sum(bool(x.get('error')) for x in state.get('sources',[]))
         today = sum(matches_period(r, 'اليوم') and relevance(r) in ('مباشر', 'غير مباشر') for r in state['items'])
         latest = next((publication_time(r) for r in sorted_articles(state['items']) if publication_time(r)), None)
@@ -387,6 +427,7 @@ def desktop():
         for index, current in enumerate(state['items']):
             if current['id'] == row['id']:
                 state['items'][index] = row; break
+        state['items'] = prune_archive(state)['items']
         path.write_text(json.dumps(state, ensure_ascii=False), encoding='utf-8')
         render()
         note.set(text_status(row) + (' — ' + row.get('body_error', '') if not row.get('body') else ' — تم تحديث الفلاتر والتصنيف'))
@@ -429,7 +470,7 @@ def desktop():
                 for r in shown: w.writerow([r['title'],r['source'],r['published'],r['url'],*impact_details(r),text_status(r),r.get('article_url',r['url'])])
     ttk.Button(bar,text='قراءة نص الخبر',command=read_selected).pack(side='left')
     refresh=ttk.Button(bar,text='تحديث',command=update); refresh.pack(side='left'); ttk.Button(bar,text='تصدير CSV',command=export).pack(side='left')
-    ttk.Label(root,text='بحث كل ساعة • يجلب حتى 40 نصا في كل دورة؛ البقية في الدورات التالية • زر قراءة النص لجلب خبر محدد').pack(pady=4)
+    ttk.Label(root,text='بحث كل ساعة • حذف تلقائي بعد 4 أيام من النشر (ومن الاكتشاف عند غياب التاريخ) • جلب حتى 40 نصا بكل دورة').pack(pady=4)
     ttk.Label(root,text='رابط HTTPS لنتائج الخدمة السحابية (اختياري؛ تركه فارغًا يجمع الأخبار على الجهاز)').pack()
     ttk.Entry(root,textvariable=endpoint,width=100).pack(pady=5); ttk.Label(root,textvariable=note,wraplength=1050).pack(pady=8)
     def poll():
@@ -446,6 +487,10 @@ def desktop():
         update()
         root.after(REFRESH_INTERVAL_MS, auto_refresh)
     def tick():
+        retained = prune_archive(state)
+        if retained['items'] != state['items']:
+            state['items'] = retained['items']
+            path.write_text(json.dumps(state,ensure_ascii=False),encoding='utf-8')
         render()
         root.after(60000, tick)
     tick(); poll(); root.after(300, auto_refresh); root.mainloop()
