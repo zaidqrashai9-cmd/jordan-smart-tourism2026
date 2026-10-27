@@ -44,11 +44,18 @@ jobs:
           arch: x86_64
           working-directory: android
           script: |
+            adb shell svc wifi disable
+            adb shell svc data disable
             gradle connectedDebugAndroidTest
+            adb install -r app/build/outputs/apk/debug/app-debug.apk
+            adb shell am start -W -n jo.media.monitor/.MainActivity
+            sleep 3
+            adb exec-out screencap -p > android-ui.png
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: Android-test-results
           path: |
+            android/android-ui.png
             android/app/build/reports/androidTests/
           retention-days: 7
