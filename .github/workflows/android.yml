@@ -34,10 +34,23 @@ jobs:
           name: MediaUnitMonitor-Android
           path: android/app/build/outputs/apk/debug/app-debug.apk
           retention-days: 30
+      - name: Enable emulator hardware acceleration
+        run: sudo chmod 666 /dev/kvm
       - name: Test Python runtime on Android
         uses: reactivecircus/android-emulator-runner@v2
         with:
-          api-level: 29
+          api-level: 35
+          emulator-boot-timeout: 180
           arch: x86_64
           working-directory: android
-          script: gradle connectedDebugAndroidTest
+          script: |
+            gradle connectedDebugAndroidTest
+            adb pull /sdcard/Android/data/jo.media.monitor/files/android-ui.png android-ui.png
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: Android-test-results
+          path: |
+            android/android-ui.png
+            android/app/build/reports/androidTests/
+          retention-days: 7
