@@ -45,12 +45,10 @@ jobs:
           working-directory: android
           script: |
             gradle connectedDebugAndroidTest
-            adb pull /sdcard/Android/data/jo.media.monitor/files/android-ui.png android-ui.png
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: Android-test-results
           path: |
-            android/android-ui.png
             android/app/build/reports/androidTests/
           retention-days: 7
