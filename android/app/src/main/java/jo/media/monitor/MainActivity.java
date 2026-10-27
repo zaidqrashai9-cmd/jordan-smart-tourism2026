@@ -15,7 +15,7 @@ public class MainActivity extends Activity {
  shell.addView(startup,new FrameLayout.LayoutParams(-1,-1));
  shell.setFitsSystemWindows(true);
  try{
-  web=new WebView(this);web.setLayerType(View.LAYER_TYPE_SOFTWARE,null);web.setTag("monitor-web");web.setBackgroundColor(0xfff3f5f1);shell.addView(web,0,new FrameLayout.LayoutParams(-1,-1));
+  web=new WebView(this);web.setTag("monitor-web");web.setBackgroundColor(0xfff3f5f1);shell.addView(web,0,new FrameLayout.LayoutParams(-1,-1));
   WebSettings settings=web.getSettings();settings.setJavaScriptEnabled(true);settings.setDomStorageEnabled(true);settings.setAllowFileAccess(false);settings.setAllowContentAccess(false);settings.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);settings.setBlockNetworkLoads(true);
   web.addJavascriptInterface(new Bridge(),"Native");
   web.setWebChromeClient(new WebChromeClient(){@Override public boolean onConsoleMessage(ConsoleMessage m){if(m.messageLevel()==ConsoleMessage.MessageLevel.ERROR&&!uiReady)showStartupError("تعذر تشغيل الواجهة: "+m.message());return true;}});
