@@ -16,7 +16,7 @@ android {
 chaquopy {
  defaultConfig {
   version '3.11'
-  pip { install 'trafilatura==2.3.1'; install 'googlenewsdecoder==0.2.2' }
+  pip { install 'trafilatura==2.0.0'; install 'lxml==5.3.0'; install 'htmldate==1.9.3'; install 'justext==3.0.2'; install 'dateparser==1.2.0'; install 'regex==2023.10.3' }
  }
 }
 dependencies {
