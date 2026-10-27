@@ -15,6 +15,14 @@ import androidx.test.ext.junit.runners.AndroidJUnit4;import androidx.test.platfo
  }
  assertNotNull(dom.get(),result);assertTrue(dom.get(),result.getBoolean("ready"));assertTrue(activity.uiReady);
  assertEquals("رصد وحدة الاعلام",result.getString("title"));assertEquals(5,result.getInt("periods"));assertEquals(4,result.getInt("keywords"));assertTrue(result.getDouble("header")>20);
+ inst.runOnMainSync(()->{android.webkit.WebView w=activity.findViewById(android.R.id.content).findViewWithTag("monitor-web");assertTrue("WebView has no visible width",w.getWidth()>200);assertTrue("WebView has no visible height",w.getHeight()>200);w.invalidate();});
+ int greenPixels=0;int required=0;
+ for(int attempt=0;attempt<50;attempt++){
+  inst.waitForIdleSync();android.graphics.Bitmap screen=inst.getUiAutomation().takeScreenshot();int width=screen.getWidth(),height=screen.getHeight();required=width*height/50;greenPixels=0;
+  for(int y=0;y<height;y+=2)for(int x=0;x<width;x+=2){int pixel=screen.getPixel(x,y);int r=android.graphics.Color.red(pixel),g=android.graphics.Color.green(pixel),b=android.graphics.Color.blue(pixel);if(r<65&&g>30&&b<100&&g>r*1.15)greenPixels+=4;}
+  screen.recycle();if(greenPixels>required)break;android.os.SystemClock.sleep(200);
+ }
+ assertTrue("Blank painted screen: green pixels="+greenPixels+" expected >"+required,greenPixels>required);
  inst.runOnMainSync(()->{assertEquals(android.view.View.GONE,activity.findViewById(android.R.id.content).findViewWithTag("startup").getVisibility());activity.showStartupError("اختبار رسالة خطأ العرض");assertEquals(android.view.View.VISIBLE,activity.findViewById(android.R.id.content).findViewWithTag("startup").getVisibility());});
  inst.runOnMainSync(activity::finish);
  }

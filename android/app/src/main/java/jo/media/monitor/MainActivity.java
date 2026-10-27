@@ -13,9 +13,9 @@ public class MainActivity extends Activity {
  startupText=new TextView(this);startupText.setText("جارٍ فتح الواجهة…");startupText.setTextSize(16);startupText.setGravity(Gravity.CENTER);startupText.setPadding(0,28,0,28);startup.addView(startupText);
  retry=new Button(this);retry.setText("إعادة المحاولة");retry.setVisibility(View.GONE);retry.setOnClickListener(v->recreate());startup.addView(retry);
  shell.addView(startup,new FrameLayout.LayoutParams(-1,-1));
- shell.setOnApplyWindowInsetsListener((v,i)->{v.setPadding(i.getSystemWindowInsetLeft(),i.getSystemWindowInsetTop(),i.getSystemWindowInsetRight(),i.getSystemWindowInsetBottom());return i;});
+ shell.setFitsSystemWindows(true);
  try{
-  web=new WebView(this);web.setTag("monitor-web");web.setBackgroundColor(0xfff3f5f1);shell.addView(web,0,new FrameLayout.LayoutParams(-1,-1));
+  web=new WebView(this);web.setLayerType(View.LAYER_TYPE_SOFTWARE,null);web.setTag("monitor-web");web.setBackgroundColor(0xfff3f5f1);shell.addView(web,0,new FrameLayout.LayoutParams(-1,-1));
   WebSettings settings=web.getSettings();settings.setJavaScriptEnabled(true);settings.setDomStorageEnabled(true);settings.setAllowFileAccess(false);settings.setAllowContentAccess(false);settings.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);settings.setBlockNetworkLoads(true);
   web.addJavascriptInterface(new Bridge(),"Native");
   web.setWebChromeClient(new WebChromeClient(){@Override public boolean onConsoleMessage(ConsoleMessage m){if(m.messageLevel()==ConsoleMessage.MessageLevel.ERROR&&!uiReady)showStartupError("تعذر تشغيل الواجهة: "+m.message());return true;}});

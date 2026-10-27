@@ -51,11 +51,14 @@ jobs:
             adb shell am start -W -n jo.media.monitor/.MainActivity
             sleep 3
             adb exec-out screencap -p > android-ui.png
+            adb shell uiautomator dump /sdcard/window.xml
+            adb pull /sdcard/window.xml android-window.xml
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: Android-test-results
           path: |
             android/android-ui.png
+            android/android-window.xml
             android/app/build/reports/androidTests/
           retention-days: 7
