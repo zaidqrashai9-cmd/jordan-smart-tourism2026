@@ -1,0 +1,53 @@
+name: Build native iPhone app
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'ios/**'
+      - '.github/workflows/ios.yml'
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Xcode project generator
+        run: brew install xcodegen
+      - name: Generate native project
+        working-directory: ios
+        run: xcodegen generate
+      - name: Select iPhone simulator
+        run: |
+          DEVICE=$(xcrun simctl list devices available -j | python3 -c 'import json,sys; d=json.load(sys.stdin); print(next(x["udid"] for devices in d["devices"].values() for x in devices if "iPhone" in x["name"]))')
+          echo "IOS_SIMULATOR=$DEVICE" >> "$GITHUB_ENV"
+          xcrun simctl boot "$DEVICE" || true
+          xcrun simctl bootstatus "$DEVICE" -b
+      - name: Build and test native iPhone interface
+        working-directory: ios
+        run: xcodebuild -project MediaMonitor.xcodeproj -scheme MediaMonitor -destination "platform=iOS Simulator,id=$IOS_SIMULATOR" -derivedDataPath build -resultBundlePath TestResults.xcresult CODE_SIGNING_ALLOWED=NO test
+      - name: Capture actual native screen
+        working-directory: ios
+        run: |
+          xcrun simctl install "$IOS_SIMULATOR" build/Build/Products/Debug-iphonesimulator/MediaMonitor.app
+          xcrun simctl launch "$IOS_SIMULATOR" jo.mediaunit.monitor
+          sleep 5
+          xcrun simctl io "$IOS_SIMULATOR" screenshot iPhone-news.png
+      - name: Build device binary requiring local Apple signing
+        working-directory: ios
+        run: |
+          xcodebuild -project MediaMonitor.xcodeproj -scheme MediaMonitor -sdk iphoneos -configuration Release -derivedDataPath device CODE_SIGNING_ALLOWED=NO build
+          mkdir -p package/Payload
+          cp -R device/Build/Products/Release-iphoneos/MediaMonitor.app package/Payload/
+          cd package && zip -qr ../MediaUnitMonitor-unsigned.ipa Payload
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: MediaUnitMonitor-iPhone
+          path: |
+            ios/MediaUnitMonitor-unsigned.ipa
+            ios/iPhone-news.png
+            ios/TestResults.xcresult
+            ios/MediaMonitor.xcodeproj
+          retention-days: 30
