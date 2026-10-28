@@ -26,7 +26,7 @@ jobs:
           xcrun simctl bootstatus "$DEVICE" -b
       - name: Build and test native iPhone interface
         working-directory: ios
-        run: xcodebuild -project MediaMonitor.xcodeproj -scheme MediaMonitor -destination "platform=iOS Simulator,id=$IOS_SIMULATOR" -derivedDataPath build -resultBundlePath TestResults.xcresult CODE_SIGNING_ALLOWED=NO test
+        run: xcodebuild -project MediaMonitor.xcodeproj -scheme MediaMonitor -destination "platform=iOS Simulator,id=$IOS_SIMULATOR" -parallel-testing-enabled NO -maximum-concurrent-test-simulator-destinations 1 -derivedDataPath build -resultBundlePath TestResults.xcresult CODE_SIGNING_ALLOWED=NO test
       - name: Capture actual native screen
         working-directory: ios
         run: |
@@ -42,12 +42,15 @@ jobs:
           cp -R device/Build/Products/Release-iphoneos/MediaMonitor.app package/Payload/
           cd package && zip -qr ../MediaUnitMonitor-unsigned.ipa Payload
       - uses: actions/upload-artifact@v4
-        if: always()
         with:
           name: MediaUnitMonitor-iPhone
+          path: ios/MediaUnitMonitor-unsigned.ipa
+          retention-days: 30
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: iPhone-verification
           path: |
-            ios/MediaUnitMonitor-unsigned.ipa
             ios/iPhone-news.png
             ios/TestResults.xcresult
-            ios/MediaMonitor.xcodeproj
-          retention-days: 30
+          retention-days: 14

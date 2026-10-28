@@ -17,7 +17,7 @@ extension Color {
     NewsScreen(social:false).tabItem{Label("الأخبار",systemImage:"newspaper")}.accessibilityIdentifier("news-tab")
     NewsScreen(social:true).tabItem{Label("السوشال ميديا",systemImage:"bubble.left.and.bubble.right")}.accessibilityIdentifier("social-tab")
     StatusScreen().tabItem{Label("المصادر",systemImage:"checklist")}.accessibilityIdentifier("sources-tab")
-   }.tint(.forest).environmentObject(store).environment(\.layoutDirection,.rightToLeft)
+   }.tint(.forest).preferredColorScheme(.light).environmentObject(store).environment(\.layoutDirection,.rightToLeft)
     .task{if !testing{await store.sync()}}
     .onChange(of:phase){_,value in if value == .active && !testing {store.prune();Task{await store.sync()}}}
     .onReceive(Timer.publish(every:60,on:.main,in:.common).autoconnect()){_ in if !testing{store.prune()}}
