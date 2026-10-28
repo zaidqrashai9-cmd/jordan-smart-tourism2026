@@ -77,7 +77,7 @@ struct NewsScreen:View {
   VStack(alignment:.leading,spacing:12){
    Text("اتصال المنصات").font(.headline)
    let states=store.feed.social_sources ?? ["Facebook","Instagram","X"].map{SocialStatus(platform:$0,connected:false,count:0,message:"غير متصل — يلزم وصول API مصرح به. الإضافة اليدوية متاحة.")}
-   ForEach(states){s in HStack(alignment:.top){Image(systemName:s.connected ? "checkmark.circle.fill":"minus.circle").foregroundStyle(s.connected ? .green:.secondary);VStack(alignment:.leading,spacing:4){Text(s.platform).font(.subheadline.bold());Text(s.message).font(.caption).foregroundStyle(.secondary)};Spacer()}}
+   ForEach(states){s in HStack(alignment:.top){Image(systemName:s.connected ? "checkmark.circle.fill":"minus.circle").foregroundStyle(s.connected ? Color.green:Color.secondary);VStack(alignment:.leading,spacing:4){Text(s.platform).font(.subheadline.bold());Text(s.message).font(.caption).foregroundStyle(.secondary)};Spacer()}}
    Text("المنشورات اليدوية تُحفظ على هاتفك فقط. لا نعطي انطباعًا برصد شامل لمنصة غير متصلة.").font(.caption).foregroundStyle(.secondary)
   }.padding().background(.white,in:RoundedRectangle(cornerRadius:18))
  }
@@ -124,6 +124,7 @@ struct FilterSheet:View {
    Picker("الصلة بالسياحة",selection:$filters.relevance){ForEach(["مباشر وغير مباشر","مباشر","غير مباشر","للمراجعة","مستبعد"],id:\.self){Text($0).tag($0)}}
    Picker("الكلمة المفتاحية",selection:$filters.keyword){ForEach(Filters.keywords,id:\.self){Text($0).tag($0)}}
    Picker("المصدر",selection:$filters.publisher){ForEach(["الكل"]+sources,id:\.self){Text($0).tag($0)}}
+   if !social {Picker("نوع المصدر",selection:$filters.region){ForEach(["الكل","أردنية","دولية","غير مصنف"],id:\.self){Text($0).tag($0)}}}
    if social {Picker("المنصة",selection:$filters.platform){ForEach(["الكل","Facebook","Instagram","X"],id:\.self){Text($0).tag($0)}}}
    Section{Text("المدن والبلدات جزء من البحث، وليست خيارات إضافية في قائمة الكلمات. فلاتر الوقت تعتمد وقت النشر الأصلي بتوقيت عمّان.").font(.caption).foregroundStyle(.secondary);Button("إعادة ضبط الفلاتر"){filters=Filters()}}
   }.navigationTitle("الفلاتر").toolbar{ToolbarItem(placement:.confirmationAction){Button("تم"){dismiss()}.accessibilityIdentifier("filters-done")}}}
@@ -156,6 +157,8 @@ struct StatusScreen:View {
    LabeledContent("أحدث خبر ذي صلة",value:Dates.display(store.latest))
    LabeledContent("آخر مزامنة على الهاتف",value:Dates.display(store.lastSync))
    LabeledContent("مواد جديدة في آخر محاولة",value:String(store.feed.new_items ?? 0))
+   LabeledContent("استعلامات آخر دورة",value:"\(store.feed.checked_queries ?? 0) من \(store.feed.total_queries ?? 0)")
+   Text("يتناوب البحث التفصيلي بين مجموعات المواقع، مع استعلامات سياحية عامة في كل دورة؛ لا يتم فحص كل مدينة كل ساعة.").font(.caption).foregroundStyle(.secondary)
    Text("الخادم يستهدف الجمع كل ساعة عبر GitHub Actions؛ قد يتأخر التنفيذ أو يتوقف وفق قيود المزود. زر «بحث من الهاتف» يجلب دفعة إضافية مباشرة أثناء الفتح. لا ندّعي رصد كل الإنترنت.").font(.caption).foregroundStyle(.secondary)
   }
   Section("دليل المواقع"){

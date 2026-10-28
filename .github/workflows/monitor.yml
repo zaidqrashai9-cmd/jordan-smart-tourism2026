@@ -34,6 +34,7 @@ jobs:
         run: |
           git config user.name 'Tourism Monitor'
           git config user.email 'monitor@users.noreply.github.com'
+          git restore ios/Resources/news.json ios/Resources/queries.json
           git add data/news.json
           if ! git diff --cached --quiet; then
             git commit -m 'Refresh public tourism feed [skip ci]'

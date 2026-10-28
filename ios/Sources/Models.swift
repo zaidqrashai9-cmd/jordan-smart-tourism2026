@@ -26,6 +26,15 @@ struct Article: Codable, Identifiable, Hashable {
  var language: String { _language ?? (title.unicodeScalars.filter { (0x0600...0x06ff).contains($0.value) }.count > title.filter(\.isASCII).count / 2 ? "AR" : "EN") }
  var relevance: String { _relevance ?? "للمراجعة" }
  var sentiment: String { _impact?.first ?? "يحتاج مراجعة" }
+ var publisherRegion:String {
+  let publisher=TextRules.norm(source)
+  let local=["بترا","عمون","المملكة","الدستور","الغد","الرأي","جفرا","مدار الساعة","petra","jordan times","al rai","ammon","almamlaka"]
+  let global=["reuters","bbc","cnn","euronews","eturbonews","travel and tour world","fast company","el pais","elpais","the guardian","france 24","al jazeera"]
+  if local.contains(where:publisher.contains){return "أردنية"}
+  if global.contains(where:publisher.contains){return "دولية"}
+  if let host=URL(string:article_url ?? url)?.host,host.hasSuffix(".jo"){return "أردنية"}
+  return "غير مصنف"
+ }
  var shareText: String { "\(title)\n\nالمصدر: \(source)\n\(link?.absoluteString ?? url)" }
 }
 struct SourceStatus: Codable, Identifiable {
@@ -99,7 +108,7 @@ enum Period:String,CaseIterable,Identifiable {
  }
 }
 struct Filters:Equatable {
- var period:Period = .all;var language="الكل";var impact="كل الاتجاهات";var relevance="مباشر وغير مباشر";var keyword="كل الكلمات";var query="";var publisher="الكل";var platform="الكل"
+ var period:Period = .all;var language="الكل";var impact="كل الاتجاهات";var relevance="مباشر وغير مباشر";var keyword="كل الكلمات";var query="";var publisher="الكل";var platform="الكل";var region="الكل"
  static let keywords=["كل الكلمات","وزارة السياحة والآثار الأردنية","عماد حجازين","وزير السياحة والآثار الدكتور عماد حجازين"]
  func matches(_ r:Article,now:Date=Date())->Bool {
   guard Dates.retained(r,now:now),period.contains(r,now:now) else{return false}
@@ -110,6 +119,7 @@ struct Filters:Equatable {
   if keyword != "كل الكلمات" && !(r._matched_keywords ?? []).contains(keyword) && !TextRules.norm(r.evidence).contains(TextRules.norm(keyword)){return false}
   if platform != "الكل" && r.platform != platform{return false}
   if publisher != "الكل" && publisher != r.source{return false}
+  if region != "الكل" && region != r.publisherRegion{return false}
   return query.isEmpty || TextRules.norm(r.evidence+" "+r.source+" "+(r._places ?? []).joined(separator:" ")).contains(TextRules.norm(query))
  }
 }
@@ -124,7 +134,7 @@ enum TextRules {
  static func analyze(_ original:Article,places:[Place])->Article {
   var r=original;let s=norm(r.evidence)
   let country=has(s,["الأردن","الأردنية","الأردني","Jordanian"]) || s.range(of:"\\b(in|to|from|of|visit) jordan\\b|\\bjordan (tourism|travel)\\b|\\bjordan[’']s\\b",options:.regularExpression) != nil
-  let known=has(s,["العقبة","البترا","البتراء","وادي رم","جرش","عجلون","مادبا","Aqaba","Petra","Wadi Rum","Jerash","Ajloun","Madaba","قلعة الكرك","Karak Castle"])
+  let known=has(s,["عمان","عمّان","إربد","اربد","الزرقاء","السلط","الفحيص","الطفيلة","معان","الكرك","المفرق","وادي موسى","Amman","Irbid","Zarqa","Tafilah","Mafraq","Fuheis","Wadi Musa","العقبة","البترا","البتراء","وادي رم","جرش","عجلون","مادبا","Aqaba","Petra","Wadi Rum","Jerash","Ajloun","Madaba","قلعة الكرك","Karak Castle"])
   let official=has(s,names+["وزارة السياحة والآثار الأردنية","هيئة تنشيط السياحة الأردنية","دائرة الآثار العامة الأردنية","أردننا جنة","Jordan Tourism Board","Jordan Ministry of Tourism"])
   let found=places.filter { has(s,[$0.ar,$0.en].filter { $0.count>=3 }) }.prefix(12).map(\.ar)
   r._places=Array(found)

@@ -2,6 +2,7 @@
 import sys,pathlib,json,datetime as dt,concurrent.futures,urllib.parse,urllib.request,os,re
 ROOT=pathlib.Path(__file__).resolve().parents[1];sys.path.insert(0,str(ROOT));import monitor as m
 OUT=ROOT/'data';OUT.mkdir(exist_ok=True)
+m.JORDAN_PLACES += ['عمان','عمّان','الزرقاء','السلط','الفحيص','الطفيلة','المفرق','وادي موسى','Amman','Zarqa','Tafilah','Mafraq','Fuheis','Wadi Musa']
 LOC=json.loads((ROOT/'monitoring/localities.json').read_text())
 PRIORITY=['السياحة الأردن','عماد حجازين','هيئة تنشيط السياحة','أردننا جنة','Jordan tourism','Jordan travel','Jordan travel advisory','الأردن تحذيرات السفر','الكرك سياحة','البترا سياح','العقبة سياحة','وادي رم سياحة']
 ALL=m.expanded_queries()
@@ -52,6 +53,11 @@ def social_connectors():
 
 def decorate(r):
  rel,why,impact,places=classify(r);row=dict(r);row.update(_relevance=rel,_relevance_reason=why,_impact=impact,_language=m.article_language(r),_places=places,_matched_keywords=[k for k in m.KEYWORD_GROUPS if m.matches_keyword(r,k)])
+ if r.get('_analysis_title')==r['title'] and r.get('body_checked'):
+  row['_matched_keywords']=list(dict.fromkeys(row['_matched_keywords']+r.get('_matched_keywords',[])))
+  if r.get('_relevance') in ['مباشر','غير مباشر'] and row['_relevance'] not in ['مباشر','غير مباشر']:
+   row['_relevance']=r['_relevance'];row['_relevance_reason']=r.get('_relevance_reason',row['_relevance_reason']);row['_impact']=r.get('_impact',row['_impact'])
+ row['_analysis_title']=r['title']
  body=r.get('body','');row['text_scope']='body analyzed; excerpt displayed' if body else 'headline and summary only';row['body']=body[:450];row['summary']=r.get('summary','')[:450]
  row.pop('query',None);return row
 
@@ -79,6 +85,6 @@ def main(seed=False):
  data={'items':items,'sources':status,'updated':now,'last_success':now if successful else old.get('last_success'),'new_items':new,'cursor':(cursor+batch)%len(ALL),'total_queries':len(ALL),'checked_queries':len(jobs),'last_check_successful':successful>0,'schedule':'GitHub Actions, hourly target at minute 17; runs may be delayed or disabled by provider inactivity rules.','localities':{'count':LOC['locality_count'],'governorates':12,'source':LOC['source'],'year':2025},'social_items':social,'social_sources':socialstatus}
  p.write_text(json.dumps(data,ensure_ascii=False,separators=(',',':')))
  # The native offline bundle contains real collected news, never production fixtures.
- (ROOT/'ios/Resources/news.json').write_text(json.dumps(data,ensure_ascii=False,separators=(',',':')))
+ if seed:(ROOT/'ios/Resources/news.json').write_text(json.dumps(data,ensure_ascii=False,separators=(',',':')))
  print(json.dumps({'items':len(items),'new':new,'failed':len(status)-successful,'queries':len(ALL),'localities':LOC['locality_count']},ensure_ascii=False))
 if __name__=='__main__':main('--seed' in sys.argv)

@@ -18,6 +18,8 @@ final class MonitorTests:XCTestCase {
   XCTAssertEqual(classify("Michael Jordan visits Egypt hotel"),"مستبعد")
   XCTAssertEqual(classify("افتتاح فندق في القاهرة"),"مستبعد")
   XCTAssertEqual(classify("ارتفاع السياحة في الأردن"),"مباشر")
+  XCTAssertEqual(classify("افتتاح فندق في عمان"),"مباشر")
+  XCTAssertEqual(classify("Tourists visit Amman hotel"),"مباشر")
   XCTAssertEqual(classify("ترميم قلعة الكرك"),"غير مباشر")
  }
  func testDirectoryCompleteAndBilingual()throws{
