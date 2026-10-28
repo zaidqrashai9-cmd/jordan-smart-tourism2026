@@ -13,6 +13,11 @@ final class MonitorTests:XCTestCase {
   XCTAssertTrue(Dates.retained(row("2026-10-24T08:00:00+03:00"),now:now))
   XCTAssertFalse(Dates.retained(row("2026-10-24T07:59:59+03:00"),now:now))
  }
+ func testRepeatedDateParsingIsCached(){
+  let start=Date()
+  for _ in 0..<5000 {XCTAssertNotNil(Dates.parse("Wed, 28 Oct 2026 07:00:00 GMT"))}
+  XCTAssertLessThan(Date().timeIntervalSince(start),3,"Publication dates must not be reparsed in each sort comparison")
+ }
  func testCountryDisambiguation(){
   func classify(_ text:String)->String{TextRules.analyze(Article(id:text,title:text,source:"Test",url:"https://example.com",published:""),places:[]).relevance}
   XCTAssertEqual(classify("Michael Jordan visits Egypt hotel"),"مستبعد")

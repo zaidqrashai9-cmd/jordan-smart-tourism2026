@@ -13,7 +13,10 @@ import SwiftUI
  private var queryCursor=0
  init(testing:Bool=false){
   folder=FileManager.default.urls(for:.documentDirectory,in:.userDomainMask)[0]
-  if testing {notice="وضع فحص الواجهة — بيانات الاختبار معزولة";return}
+  if testing {
+   if let u=Bundle.main.url(forResource:"news",withExtension:"json"),let d=try? Data(contentsOf:u),let f=try? JSONDecoder().decode(Feed.self,from:d){feed=f}
+   notice="فحص تشغيل بأرشيف جمع فعلي، مع تعطيل الاتصال بالشبكة والتخزين الخاص.";return
+  }
   let cache=folder.appendingPathComponent("news-cache.json")
   if let d=try? Data(contentsOf:cache),let f=try? JSONDecoder().decode(Feed.self,from:d){feed=f}
   else if let u=Bundle.main.url(forResource:"news",withExtension:"json"),let d=try? Data(contentsOf:u),let f=try? JSONDecoder().decode(Feed.self,from:d){feed=f;notice="أرشيف مرفق من جمع فعلي؛ حدّثه للحصول على أحدث النتائج."}
@@ -42,7 +45,9 @@ import SwiftUI
   guard !busy else{return};busy=true;notice="جارٍ البحث من الهاتف؛ الأرشيف المحفوظ متاح أثناء الجلب…";defer{busy=false}
   let results=await RSSCollector.search(cursor:queryCursor);queryCursor+=12;UserDefaults.standard.set(queryCursor,forKey:"query-cursor")
   var map=Dictionary(feed.items.map{($0.url,$0)},uniquingKeysWith:{a,_ in a});var added=0
-  for r in results.0 {if map[r.url]==nil {var row=TextRules.analyze(r,places:directory?.items ?? []);row.discovered=ISO8601DateFormatter().string(from:Date());map[row.url]=row;added+=1}}
+  let existing=Set(map.keys);let places=directory?.items ?? [];let pending=results.0.filter{!existing.contains($0.url)}
+  let analyzed=await Task.detached(priority:.userInitiated){pending.map{TextRules.analyze($0,places:places)}}.value
+  for var row in analyzed {if map[row.url]==nil{row.discovered=ISO8601DateFormatter().string(from:Date());map[row.url]=row;added+=1}}
   feed.items=Array(map.values);feed.sources=results.1;feed.updated=ISO8601DateFormatter().string(from:Date());feed.new_items=added
   if results.1.contains(where:{$0.error==nil}) {feed.last_success=feed.updated};prune()
   let failed=results.1.filter{$0.error != nil}.count

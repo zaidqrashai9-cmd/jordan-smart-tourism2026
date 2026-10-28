@@ -77,13 +77,21 @@ struct PlaceDirectory: Codable {
 }
 enum Dates {
  static let zone=TimeZone(identifier:"Asia/Amman")!
+ private static let lock=NSLock()
+ private static var cache:[String:Date]=[:]
+ private static var invalid=Set<String>()
+ private static let isoFractional:ISO8601DateFormatter={let f=ISO8601DateFormatter();f.formatOptions=[.withInternetDateTime,.withFractionalSeconds];return f}()
+ private static let isoPlain=ISO8601DateFormatter()
+ private static let rfc:DateFormatter={let f=DateFormatter();f.locale=Locale(identifier:"en_US_POSIX");f.timeZone=TimeZone(secondsFromGMT:0);return f}()
  static func parse(_ s:String)->Date? {
-  let iso=ISO8601DateFormatter();iso.formatOptions=[.withInternetDateTime,.withFractionalSeconds]
-  if let d=iso.date(from:s){return d};iso.formatOptions=[.withInternetDateTime]
-  if let d=iso.date(from:s){return d}
-  let f=DateFormatter();f.locale=Locale(identifier:"en_US_POSIX");f.timeZone=TimeZone(secondsFromGMT:0)
-  for format in ["EEE, dd MMM yyyy HH:mm:ss zzz","EEE, d MMM yyyy HH:mm:ss zzz"] {f.dateFormat=format;if let d=f.date(from:s){return d}}
-  return nil
+  guard !s.isEmpty else{return nil}
+  lock.lock();defer{lock.unlock()}
+  if let d=cache[s]{return d};if invalid.contains(s){return nil}
+  var parsed=isoFractional.date(from:s) ?? isoPlain.date(from:s)
+  if parsed==nil {for format in ["EEE, dd MMM yyyy HH:mm:ss zzz","EEE, d MMM yyyy HH:mm:ss zzz"]{rfc.dateFormat=format;if let d=rfc.date(from:s){parsed=d;break}}}
+  if cache.count+invalid.count>20000{cache.removeAll();invalid.removeAll()}
+  if let d=parsed{cache[s]=d}else{invalid.insert(s)}
+  return parsed
  }
  static func display(_ d:Date?)->String {
   guard let d else{return "وقت غير معروف"};let f=DateFormatter();f.locale=Locale(identifier:"ar_JO");f.timeZone=zone;f.dateFormat="dd MMM، HH:mm";return f.string(from:d)
