@@ -2,6 +2,8 @@
 import sys,pathlib,json,datetime as dt,concurrent.futures,urllib.parse,urllib.request,os,re
 ROOT=pathlib.Path(__file__).resolve().parents[1];sys.path.insert(0,str(ROOT));import monitor as m
 OUT=ROOT/'data';OUT.mkdir(exist_ok=True)
+ANALYSIS_VERSION='2026-10-28b'
+m.FOREIGN_TERMS += ['West Bank','الضفة الغربية','Palestine','فلسطين','Gaza','غزة','Israel','إسرائيل','Syria','سوريا','Iraq','العراق']
 m.JORDAN_PLACES += ['عمان','عمّان','الزرقاء','السلط','الفحيص','الطفيلة','المفرق','وادي موسى','Amman','Zarqa','Tafilah','Mafraq','Fuheis','Wadi Musa']
 LOC=json.loads((ROOT/'monitoring/localities.json').read_text())
 PRIORITY=['السياحة الأردن','عماد حجازين','هيئة تنشيط السياحة','أردننا جنة','Jordan tourism','Jordan travel','Jordan travel advisory','الأردن تحذيرات السفر','الكرك سياحة','البترا سياح','العقبة سياحة','وادي رم سياحة']
@@ -55,10 +57,11 @@ def decorate(r):
  rel,why,impact,places=classify(r);row=dict(r);row.update(_relevance=rel,_relevance_reason=why,_impact=impact,_language=m.article_language(r),_places=places,_matched_keywords=[k for k in m.KEYWORD_GROUPS if m.matches_keyword(r,k)])
  if r.get('_analysis_title')==r['title'] and r.get('body_checked'):
   row['_matched_keywords']=list(dict.fromkeys(row['_matched_keywords']+r.get('_matched_keywords',[])))
-  if r.get('_relevance') in ['مباشر','غير مباشر'] and row['_relevance'] not in ['مباشر','غير مباشر']:
+  if r.get('_analysis_version')==ANALYSIS_VERSION and r.get('_relevance') in ['مباشر','غير مباشر'] and row['_relevance'] not in ['مباشر','غير مباشر']:
    row['_relevance']=r['_relevance'];row['_relevance_reason']=r.get('_relevance_reason',row['_relevance_reason']);row['_impact']=r.get('_impact',row['_impact'])
- row['_analysis_title']=r['title']
- body=r.get('body','');row['text_scope']='body analyzed; excerpt displayed' if body else 'headline and summary only';row['body']=body[:450];row['summary']=r.get('summary','')[:450]
+ row['_analysis_title']=r['title'];row['_analysis_version']=ANALYSIS_VERSION
+ body=r.get('body','');row['text_scope']='body analyzed; excerpt displayed' if body else 'headline and summary only';snippets=[part.strip() for part in re.split(r'(?<=[.!?؟])\s+|\n+',body) if part.strip() and m.jordan_anchor(part)]
+ row['body']=(snippets[0] if snippets else body)[:450];row['summary']=r.get('summary','')[:450]
  row.pop('query',None);return row
 
 def main(seed=False):
