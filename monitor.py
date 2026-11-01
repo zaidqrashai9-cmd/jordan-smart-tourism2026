@@ -1,6 +1,7 @@
 """Jordan Tourism Monitor: standard-library collector and Windows desktop client."""
 from email.utils import parsedate_to_datetime
 import html
+import translation
 import unicodedata
 import queue
 import argparse, concurrent.futures, csv, datetime as dt, hashlib, json, pathlib, re, threading, urllib.parse, urllib.request, webbrowser, xml.etree.ElementTree as ET
@@ -487,7 +488,7 @@ def collect(previous=None):
 def desktop():
     import tkinter as tk
     from tkinter import ttk, messagebox, filedialog
-    root=tk.Tk(); root.title('رصد السياحة الأردنية — 1.2'); root.geometry('1150x720')
+    root=tk.Tk(); root.title('رصد السياحة الأردنية — 1.3'); root.geometry('1150x720')
     cache=pathlib.Path.home()/'JordanTourismMonitor'; cache.mkdir(exist_ok=True); path=cache/'feed.json'
     state=json.loads(path.read_text('utf-8')) if path.exists() else {'items':[]}
     state=prune_archive(state)
@@ -620,6 +621,51 @@ def desktop():
             with open(target,'w',encoding='utf-8-sig',newline='') as f:
                 w=csv.writer(f); w.writerow(['العنوان','المصدر','وقت النشر','الرابط','الاتجاه التقديري','سبب التصنيف','نطاق القراءة','رابط المصدر'])
                 for r in shown: w.writerow([r['title'],r['source'],r['published'],r['url'],*impact_details(r),text_status(r),r.get('article_url',r['url'])])
+    translation_callbacks = {}
+    def translate_selected():
+        if not table.selection():
+            note.set('اختر خبرا للترجمة'); return
+        row = dict(shown[int(table.selection()[0])])
+        window=tk.Toplevel(root); window.title('ترجمة تحريرية إلى الإنجليزية — مسودة'); window.geometry('950x760')
+        ttk.Label(window,text='أسلوب مستخلص من أمثلة بترا • ترجمة آلية تحتاج مراجعة وليست ترجمة رسمية',wraplength=900).pack(pady=5)
+        ttk.Label(window,text='راجع النص العربي أو الصق الخبر الكامل؛ المتاح قد يكون عنوانا أو مقتطفا فقط').pack()
+        source=tk.Text(window,wrap='word',height=12,font=('Arial',12)); source.pack(fill='both',expand=True,padx=10)
+        source.insert('1.0',row.get('title','')+'\n\n'+(row.get('body') or row.get('summary','')))
+        ttk.Label(window,text='المحرك مجاني ومحلي: ثبّت Ollama من ollama.com/download ثم نفّذ: ollama pull qwen3:8b').pack(pady=4)
+        status=tk.StringVar(value='اختر ترجمة بعد مراجعة النص. قد تكون أول ترجمة بطيئة حسب جهازك.')
+        ttk.Label(window,textvariable=status,wraplength=900).pack()
+        result=tk.Text(window,wrap='word',height=15,font=('Arial',12)); result.pack(fill='both',expand=True,padx=10)
+        controls=ttk.Frame(window);controls.pack(pady=6)
+        token=str(id(window))
+        def complete(ok,payload):
+            if not window.winfo_exists(): return
+            start.config(state='normal')
+            if ok:
+                result.delete('1.0','end');result.insert('1.0',payload)
+                status.set('مسودة مكتملة من النص الذي أدخلته؛ راجع الأسماء والأرقام قبل النشر.')
+            else:status.set(payload)
+        def run():
+            text=source.get('1.0','end').strip()
+            if not text:status.set('أدخل النص العربي أولا');return
+            start.config(state='disabled');status.set('جارٍ الترجمة محليا…')
+            translation_callbacks[token]=complete
+            def work():
+                try:inbox.put(('translation',(token,True,translation.translate(text))))
+                except Exception as exc:inbox.put(('translation',(token,False,str(exc))))
+            threading.Thread(target=work,daemon=True).start()
+        def copy_translation():
+            text=result.get('1.0','end').strip()
+            if text:root.clipboard_clear();root.clipboard_append(text);status.set('تم نسخ المسودة الإنجليزية')
+        def save_translation():
+            text=result.get('1.0','end').strip()
+            if not text:return
+            target=filedialog.asksaveasfilename(parent=window,defaultextension='.txt',filetypes=[('Text','*.txt')])
+            if target:pathlib.Path(target).write_text(text,encoding='utf-8')
+        start=ttk.Button(controls,text='ترجمة إلى الإنجليزية',command=run);start.pack(side='left',padx=5)
+        ttk.Button(controls,text='نسخ الإنجليزية',command=copy_translation).pack(side='left',padx=5)
+        ttk.Button(controls,text='حفظ TXT',command=save_translation).pack(side='left',padx=5)
+        window.bind('<Destroy>',lambda event:translation_callbacks.pop(token,None) if event.widget is window else None)
+    ttk.Button(bar,text='ترجمة إلى الإنجليزية',command=translate_selected).pack(side='left')
     ttk.Button(bar,text='قراءة نص الخبر',command=read_selected).pack(side='left')
     refresh=ttk.Button(bar,text='تحديث',command=update); refresh.pack(side='left'); ttk.Button(bar,text='تصدير CSV',command=export).pack(side='left')
     ttk.Label(root,text='بحث كل ساعة • حذف تلقائي بعد 4 أيام من النشر (ومن الاكتشاف عند غياب التاريخ) • جلب حتى 40 نصا بكل دورة').pack(pady=4)
@@ -630,6 +676,10 @@ def desktop():
             kind, payload = inbox.get_nowait()
             if kind == 'ok': done(payload)
             elif kind == 'article': accept_article(payload)
+            elif kind == 'translation':
+                token,ok,value=payload
+                callback=translation_callbacks.pop(token,None)
+                if callback:callback(ok,value)
             else:
                 note.set('تعذّر التحديث؛ النتائج المعروضة محفوظة: ' + payload)
                 refresh.config(state='normal')
