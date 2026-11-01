@@ -40,6 +40,149 @@ SEARCH_TOPICS.update({
  'visitors': {'ar': ['زوار', 'الزوار'], 'en': ['visitors', 'tourist arrivals']},
 })
 REGIONAL_SEARCH_TOPICS = {'ajloun', 'jerash', 'madaba', 'maan', 'irbid', 'karak', 'visitors'}
+# Additional discovery topics from the media team's manually spotted examples.
+# Query keywords never bypass article-level Jordan/tourism relevance checks.
+SEARCH_TOPICS.update({
+ "sports_tourism": {
+  "ar": [
+   "السياحة الرياضية",
+   "أسبوع الأردن للفنون القتالية المختلطة",
+   "بطولة العالم للهجن",
+   "سياحة الفعاليات"
+  ],
+  "en": [
+   "sports tourism",
+   "Jordan MMA Week",
+   "DF UNCAGED",
+   "camel endurance championship"
+  ]
+ },
+ "business_tourism": {
+  "ar": [
+   "سياحة الأعمال",
+   "سياحة المؤتمرات",
+   "سياحة الحوافز",
+   "مركز العقبة الدولي للمعارض",
+   "سوفكس",
+   "كسر موسمية السياحة"
+  ],
+  "en": [
+   "business tourism",
+   "MICE",
+   "incentive travel",
+   "Aqaba International Exhibition Centre",
+   "SOFEX",
+   "tourism seasonality",
+   "World MICE Awards"
+  ]
+ },
+ "medical_tourism": {
+  "ar": [
+   "السياحة العلاجية",
+   "السياحة الاستشفائية",
+   "السياحة الدامجة"
+  ],
+  "en": [
+   "medical tourism",
+   "wellness tourism",
+   "accessible tourism",
+   "inclusive tourism"
+  ]
+ },
+ "hospitality_training": {
+  "ar": [
+   "الأكاديمية الأردنية للسياحة والفندقة",
+   "جمعية الفنادق الأردنية",
+   "التدريب السياحي",
+   "التدريب الفندقي"
+  ],
+  "en": [
+   "Jordan Hotels Association",
+   "Jordan Academy of Tourism and Hospitality",
+   "hospitality training",
+   "tourism workforce"
+  ]
+ },
+ "visitor_protection": {
+  "ar": [
+   "الشرطة السياحية",
+   "حماية السياح",
+   "مكاتب تأجير السيارات الوهمية",
+   "تجربة سائح",
+   "تجارب السياح",
+   "سائح عربي",
+   "زائر أجنبي"
+  ],
+  "en": [
+   "tourist police",
+   "tourist protection",
+   "tourist scam",
+   "visitor experience",
+   "traveller experience",
+   "tourist experience"
+  ]
+ },
+ "heritage_nature": {
+  "ar": [
+   "المغطس",
+   "بيت عنيا عبر الأردن",
+   "معبد هرقل",
+   "جبل القلعة",
+   "المدرج الروماني",
+   "صون المكتشفات",
+   "ترميم المواقع الأثرية",
+   "السردية السياحية",
+   "السياحة الدينية",
+   "درب الأردن",
+   "ضانا",
+   "فينان"
+  ],
+  "en": [
+   "Baptism Site",
+   "Bethany Beyond the Jordan",
+   "Temple of Hercules",
+   "Amman Citadel",
+   "Amman Roman Theatre",
+   "archaeological conservation",
+   "religious tourism",
+   "Jordan Trail",
+   "Dana Biosphere Reserve",
+   "Feynan",
+   "culinary tourism",
+   "community tourism"
+  ]
+ },
+ "hotel_recognition": {
+  "ar": [
+   "شيراتون عمان",
+   "ماريوت البحر الميت",
+   "جوائز السياحة",
+   "تدفق السياح",
+   "تعافي السياحة"
+  ],
+  "en": [
+   "Sheraton Amman",
+   "Dead Sea Marriott",
+   "tourism awards",
+   "tourism recovery",
+   "tourist arrivals"
+  ]
+ },
+ "event_visitors": {
+  "ar": [
+   "رونالدينيو",
+   "تايسون",
+   "أرطغرل",
+   "أساطير العالم"
+  ],
+  "en": [
+   "Ronaldinho",
+   "Mike Tyson",
+   "Ertugrul"
+  ]
+ }
+})
+CONTEXT_SEARCH_TOPICS = ["sports_tourism","business_tourism","medical_tourism","hospitality_training","visitor_protection","heritage_nature","hotel_recognition","event_visitors"]
 RETENTION_DAYS = 4
 KEYWORD_GROUPS = {
  'وزارة السياحة والآثار الأردنية': SEARCH_TOPICS['ministry']['ar'] + SEARCH_TOPICS['ministry']['en'],
@@ -69,6 +212,8 @@ def expanded_queries():
                 # Ambiguous English place/institution names need a Jordan anchor.
                 if lang == 'en' and topic in ('ministry', 'antiquities', 'petra', 'aqaba', 'wadi_rum', 'dead_sea'):
                     query += ' (Jordan OR Jordanian)'
+                if topic in CONTEXT_SEARCH_TOPICS:
+                    query += (' (الأردن OR الاردن) (سياحة OR سياحي OR سياحية OR سياح OR زوار OR فندق OR تراث OR آثار OR فعالية)' if lang == 'ar' else ' (Jordan OR Jordanian) (tourism OR tourist OR travel OR hotel OR heritage OR visitors OR event)')
                 if topic in REGIONAL_SEARCH_TOPICS:
                     if lang == 'ar':
                         query += ' (سياحة OR السياحة OR سياحي OR سياحية OR سياح OR آثار OR متحف OR فندق OR فنادق OR تراث OR مهرجان)'
@@ -201,6 +346,12 @@ JORDAN_PEOPLE = ['عماد حجازين', 'عماد الحجازين', 'Imad Hij
 TOURISM_TERMS = ['tourism', 'tourist', 'tourists', 'travel', 'hotel', 'hotels', 'resort', 'resorts', 'destination', 'السياحة', 'السياحه', 'للسياحة', 'بالسياحة', 'والسياحة', 'السياحي', 'السياحية', 'السياحيه', 'السياح', 'سياح', 'سياحا', 'سائح', 'سائحا', 'السائحين', 'فندق', 'فنادق', 'الفنادق', 'منتجع', 'المنتجعات']
 INDIRECT_TERMS = ['castle', 'restoration', 'airport', 'flights', 'airline', 'heritage', 'archaeology', 'archaeological', 'festival', 'museum', 'conservation', 'nature reserve', 'مطار', 'المطار', 'الطيران', 'طيران', 'رحلات', 'الرحلات', 'الرحلات الجوية', 'تراث', 'التراث', 'آثار', 'الآثار', 'الأثرية', 'اثرية', 'مهرجان', 'مهرجانات', 'متحف', 'قلعة', 'مواقع اثرية', 'تلفريك', 'محمية', 'محميات']
 FOREIGN_TERMS = ['Egypt', 'Egyptian', 'Cairo', 'Luxor', 'Aswan', 'Sharm el Sheikh', 'Hurghada', 'مصر', 'المصرية', 'المصري', 'القاهرة', 'الاقصر', 'اسوان', 'شرم الشيخ', 'الغردقة', 'Saudi', 'السعودية', 'Dubai', 'دبي', 'Turkey', 'تركيا', 'Lebanon', 'لبنان']
+
+# Only contextual phrases are relevance signals; celebrity names and generic
+# employment/security/economic words are discovery-only.
+TOURISM_TERMS += ['السياحة الرياضية', 'السياحة العلاجية', 'السياحة الاستشفائية', 'السياحة الدامجة', 'سياحة الأعمال', 'سياحة المؤتمرات', 'سياحة الحوافز', 'السياحة الدينية', 'سياحة المغامرات', 'الشرطة السياحية', 'حماية السياح', 'تجربة سائح', 'تجارب السياح', 'زائر أجنبي', 'سائح عربي', 'التدريب الفندقي', 'التدريب السياحي', 'الأكاديمية الأردنية للسياحة والفندقة', 'جمعية الفنادق الأردنية', 'sports tourism', 'medical tourism', 'wellness tourism', 'business tourism', 'incentive travel', 'accessible tourism', 'inclusive tourism', 'religious tourism', 'culinary tourism', 'community tourism', 'tourist police', 'visitor experience', 'tourist experience', 'hospitality training', 'Jordan Hotels Association']
+INDIRECT_TERMS += ['المدرج الروماني', 'معبد هرقل', 'جبل القلعة', 'صون المكتشفات', 'ترميم المواقع الأثرية', 'المكتشفات الأثرية', 'مكتشفات البادية', 'المعرض السياحي', 'السردية التراثية', 'السردية السياحية', 'درب الأردن', 'Roman Theatre', 'Temple of Hercules', 'Amman Citadel', 'Jordan Trail', 'archaeological conservation']
+JORDAN_PLACES += ['عمان', 'عمّان', 'Amman', 'المغطس', 'بيت عنيا عبر الأردن', 'Bethany Beyond the Jordan', 'Amman Citadel', 'Amman Roman Theatre', 'Jordan Trail', 'مركز العقبة الدولي للمعارض']
 
 def jordan_anchor(text):
     text = normalized(text)

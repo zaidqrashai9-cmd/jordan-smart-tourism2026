@@ -2,7 +2,7 @@
 import sys,pathlib,json,datetime as dt,concurrent.futures,urllib.parse,urllib.request,os,re
 ROOT=pathlib.Path(__file__).resolve().parents[1];sys.path.insert(0,str(ROOT));import monitor as m
 OUT=ROOT/'data';OUT.mkdir(exist_ok=True)
-ANALYSIS_VERSION='2026-10-28b'
+ANALYSIS_VERSION='2026-11-01a'
 m.FOREIGN_TERMS += ['West Bank','الضفة الغربية','Palestine','فلسطين','Gaza','غزة','Israel','إسرائيل','Syria','سوريا','Iraq','العراق']
 m.JORDAN_PLACES += ['عمان','عمّان','الزرقاء','السلط','الفحيص','الطفيلة','المفرق','وادي موسى','Amman','Zarqa','Tafilah','Mafraq','Fuheis','Wadi Musa']
 LOC=json.loads((ROOT/'monitoring/localities.json').read_text())
