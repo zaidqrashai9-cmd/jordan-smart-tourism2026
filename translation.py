@@ -1,5 +1,5 @@
 """Editorial translation through Gemini; API key kept in session memory only."""
-import json, re, urllib.request, urllib.error
+import json, re, urllib.request, urllib.error, urllib.parse
 STYLE = """You are an Arabic-to-English news editor for Jordan tourism monitoring.
 Follow editorial patterns inferred from two user-provided Arabic/English Petra examples;
 you are not Petra and must never label output official or agency-approved.
@@ -30,22 +30,51 @@ def messages(source):
     if not source.strip(): raise ValueError('أدخل النص العربي أولا')
     if len(source)>45000: raise ValueError('النص طويل؛ قسّمه إلى أجزاء أقل من 45000 حرف')
     return [{'role':'system','content':STYLE},{'role':'user','content':'Translate the following Arabic news source in full:\n<news_source>\n'+source+'\n</news_source>'}]
-def translate(source, api_key='', model='gemini-2.5-flash', opener=None):
+FREE_TEXT_MODELS=('gemini-3.5-flash-lite','gemini-3.1-flash-lite','gemini-2.5-flash','gemini-2.5-flash-lite')
+def available_models(api_key, opener=None):
+    key=api_key.strip()
+    if not key or any(c.isspace() for c in key):raise ValueError('أدخل مفتاح Gemini صالحا')
+    names=set();page=''
+    for _ in range(10):
+        url='https://generativelanguage.googleapis.com/v1beta/models?pageSize=1000'
+        if page:url+='&pageToken='+urllib.parse.quote(page,safe='')
+        req=urllib.request.Request(url,headers={'x-goog-api-key':key})
+        try:
+            with (opener or urllib.request.urlopen)(req,timeout=30) as response:data=json.loads(response.read(2_000_000))
+        except urllib.error.HTTPError as exc:raise ValueError('تعذر اكتشاف النماذج (HTTP '+str(exc.code)+'). تحقق من المفتاح وقيود المشروع؛ لا تفعل الفوترة.') from None
+        except (urllib.error.URLError,TimeoutError,OSError):raise ValueError('تعذر اكتشاف النماذج؛ تحقق من الإنترنت.') from None
+        for row in data.get('models',[]):
+            if 'generateContent' in row.get('supportedGenerationMethods',[]):names.add(row.get('name','').removeprefix('models/'))
+        page=data.get('nextPageToken','')
+        if not page:break
+    result=[name for name in FREE_TEXT_MODELS if name in names]
+    if not result:raise ValueError('لا يظهر نموذج نصي مدعوم من القائمة المجانية لهذا المفتاح. راجع Rate Limit في AI Studio. ظهور النموذج لا يضمن حصة مجانية متاحة.')
+    return result
+
+def translate(source, api_key='', model='auto', opener=None):
     prompts=messages(source)
     key=api_key.strip()
     if not key or any(c.isspace() for c in key):raise ValueError('أدخل مفتاح Gemini صالحا من Google AI Studio')
-    if model not in ('gemini-2.5-flash','gemini-2.5-flash-lite'):raise ValueError('نموذج غير مدعوم')
+    if model=='auto':model=available_models(key,opener)[0]
+    if model not in FREE_TEXT_MODELS:raise ValueError('نموذج غير مدعوم')
     payload={'systemInstruction':{'parts':[{'text':STYLE}]},
              'contents':[{'role':'user','parts':[{'text':prompts[1]['content']}]}],
-             'generationConfig':{'temperature':0.1,'maxOutputTokens':16384,'thinkingConfig':{'thinkingBudget':0}}}
+             'generationConfig':{'temperature':0.1,'maxOutputTokens':16384}}
     request=urllib.request.Request('https://generativelanguage.googleapis.com/v1beta/models/'+model+':generateContent',
         data=json.dumps(payload).encode(),headers={'Content-Type':'application/json','x-goog-api-key':key},method='POST')
     try:
         with (opener or urllib.request.urlopen)(request,timeout=180) as response:
             data=json.loads(response.read(2_000_000))
     except urllib.error.HTTPError as exc:
-        errors={400:'المفتاح أو الطلب غير صالح؛ تحقق من مفتاح Gemini.',401:'تعذر التحقق من المفتاح.',403:'المفتاح لا يملك صلاحية الوصول؛ راجع مشروع Google AI Studio.',404:'النموذج غير متاح لحسابك؛ جرب Flash-Lite.',429:'وصلت إلى حد الاستخدام المتاح. انتظر وحاول لاحقا؛ لا تحتاج لتفعيل الفوترة.'}
-        raise ValueError(errors.get(exc.code,'تعذر الاتصال بخدمة الترجمة (HTTP '+str(exc.code)+'). حاول لاحقا.')) from None
+        errors={400:'المفتاح أو الطلب غير صالح؛ تحقق من مفتاح Gemini.',401:'تعذر التحقق من المفتاح.',403:'المفتاح لا يملك صلاحية الوصول؛ راجع مشروع Google AI Studio.',404:'لم تجد Google النموذج أو لا يدعم هذا الطلب. استخدم auto لاكتشاف نموذج متاح.',429:'وصلت إلى حد الاستخدام المتاح. انتظر وحاول لاحقا؛ لا تحتاج لتفعيل الفوترة.'}
+        detail=''
+        try:
+            message=json.loads(exc.read(10000)).get('error',{}).get('message','')
+            message=message.replace(key,'[REDACTED]')
+            message=re.sub(r'AIza[0-9A-Za-z_-]+','[REDACTED]',message)
+            detail=' — '+message[:600] if message else ''
+        except Exception:pass
+        raise ValueError(errors.get(exc.code,'تعذر الاتصال بخدمة الترجمة (HTTP '+str(exc.code)+'). حاول لاحقا.')+detail) from None
     except (urllib.error.URLError,TimeoutError,OSError):
         raise ValueError('تعذر الاتصال بـ Gemini؛ تحقق من الإنترنت وحاول لاحقا.') from None
     if data.get('error'):raise ValueError('رفضت الخدمة الطلب؛ تحقق من المفتاح والصلاحيات.')

@@ -488,7 +488,7 @@ def collect(previous=None):
 def desktop():
     import tkinter as tk
     from tkinter import ttk, messagebox, filedialog
-    root=tk.Tk(); root.title('رصد السياحة الأردنية — 1.4'); root.geometry('1150x720')
+    root=tk.Tk(); root.title('رصد السياحة الأردنية — 1.5'); root.geometry('1150x720')
     cache=pathlib.Path.home()/'JordanTourismMonitor'; cache.mkdir(exist_ok=True); path=cache/'feed.json'
     state=json.loads(path.read_text('utf-8')) if path.exists() else {'items':[]}
     state=prune_archive(state)
@@ -623,7 +623,7 @@ def desktop():
                 for r in shown: w.writerow([r['title'],r['source'],r['published'],r['url'],*impact_details(r),text_status(r),r.get('article_url',r['url'])])
     translation_callbacks = {}
     gemini_key=tk.StringVar()
-    gemini_model=tk.StringVar(value='gemini-2.5-flash')
+    gemini_model=tk.StringVar(value='auto')
     def translate_selected():
         if not table.selection():
             note.set('اختر خبرا للترجمة'); return
@@ -636,7 +636,7 @@ def desktop():
         settings=ttk.Frame(window);settings.pack(fill='x',padx=10,pady=5)
         ttk.Label(settings,text='Gemini API key').pack(side='left')
         ttk.Entry(settings,textvariable=gemini_key,show='*',width=48).pack(side='left',padx=5)
-        ttk.Combobox(settings,textvariable=gemini_model,values=('gemini-2.5-flash','gemini-2.5-flash-lite'),state='readonly',width=24).pack(side='left')
+        ttk.Combobox(settings,textvariable=gemini_model,values=('auto',*translation.FREE_TEXT_MODELS),state='readonly',width=24).pack(side='left')
         ttk.Button(settings,text='مسح المفتاح',command=lambda:gemini_key.set('')).pack(side='left',padx=5)
         ttk.Label(window,text='المفتاح يبقى في ذاكرة هذه الجلسة فقط ولا يحفظ في ملفات. الترجمة ترسل النص المعروض إلى Google.').pack(pady=3)
         ttk.Label(window,text='للنصوص المنشورة: قد تستخدم Google محتوى الفئة المجانية لتحسين خدماتها. أبقِ الفوترة غير مفعلة.').pack(pady=3)
@@ -657,7 +657,7 @@ def desktop():
             if not text:status.set('أدخل النص العربي أولا');return
             key=gemini_key.get().strip();model=gemini_model.get()
             if not key:status.set('أدخل مفتاح Gemini في الحقل أعلاه');return
-            start.config(state='disabled');status.set('جارٍ الترجمة عبر Gemini…')
+            start.config(state='disabled');status.set('جارٍ اكتشاف النموذج والترجمة عبر Gemini…')
             translation_callbacks[token]=complete
             def work():
                 try:inbox.put(('translation',(token,True,translation.translate(text,api_key=key,model=model))))
