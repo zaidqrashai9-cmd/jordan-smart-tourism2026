@@ -1,21 +1,32 @@
-import json,unittest,sys,pathlib
+import json,unittest,sys,pathlib,urllib.error
 sys.path.insert(0,str(pathlib.Path(__file__).resolve().parents[1]))
 import translation as t
-class TranslationTests(unittest.TestCase):
+class Response:
+ def __init__(self,data):self.data=data
+ def __enter__(self):return self
+ def __exit__(self,*args):pass
+ def read(self,*args):return json.dumps(self.data).encode()
+class Tests(unittest.TestCase):
  def test_request(self):
-  class Response:
-   def __enter__(self):return self
-   def __exit__(self,*args):pass
-   def read(self,*args):return json.dumps({'message':{'content':'Hijazin said Jordan welcomes visitors.'},'done_reason':'stop'}).encode()
   def fake(req,timeout):
-   self.assertEqual(req.full_url,'http://127.0.0.1:11434/api/chat')
-   data=json.loads(req.data);self.assertFalse(data['stream']);self.assertFalse(data['think']);self.assertIn('السياحة',data['messages'][1]['content']);self.assertIn('Do not silently summarize',data['messages'][0]['content']);return Response()
-  self.assertIn('Hijazin',t.translate('السياحة',opener=fake))
- def test_empty(self):
-  with self.assertRaises(ValueError):t.messages(' ')
- def test_length(self):
-  with self.assertRaises(ValueError):t.messages('ا'*45001)
- def test_no_remote_fallback(self):
-  def fail(*args,**kwargs):raise OSError('offline')
-  with self.assertRaisesRegex(ValueError,'Ollama'):t.translate('الأردن',opener=fail)
+   self.assertTrue(req.full_url.startswith('https://generativelanguage.googleapis.com/'))
+   self.assertNotIn('secret',req.full_url)
+   self.assertEqual(req.get_header('X-goog-api-key'),'secret')
+   data=json.loads(req.data)
+   self.assertIn('Do not silently summarize',data['systemInstruction']['parts'][0]['text'])
+   self.assertIn('السياحة',data['contents'][0]['parts'][0]['text'])
+   return Response({'candidates':[{'finishReason':'STOP','content':{'parts':[{'text':'Jordan tourism.'}]}}]})
+  self.assertEqual(t.translate('السياحة',api_key='secret',opener=fake),'Jordan tourism.')
+ def test_empty_key(self):
+  with self.assertRaises(ValueError):t.translate('خبر')
+ def test_empty_source(self):
+  with self.assertRaises(ValueError):t.translate('',api_key='secret')
+ def test_truncation(self):
+  with self.assertRaises(ValueError):t.translate('خبر',api_key='secret',opener=lambda *a,**k:Response({'candidates':[{'finishReason':'MAX_TOKENS'}]}))
+ def test_quota_no_retry_or_secret_leak(self):
+  def fake(*a,**k):raise urllib.error.HTTPError('https://example.invalid',429,'secret',{},None)
+  with self.assertRaises(ValueError) as e:t.translate('خبر',api_key='secret',opener=fake)
+  self.assertNotIn('secret',str(e.exception));self.assertIn('حد',str(e.exception))
+ def test_blocked(self):
+  with self.assertRaises(ValueError):t.translate('خبر',api_key='secret',opener=lambda *a,**k:Response({}))
 if __name__=='__main__':unittest.main()

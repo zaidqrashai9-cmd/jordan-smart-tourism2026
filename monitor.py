@@ -488,7 +488,7 @@ def collect(previous=None):
 def desktop():
     import tkinter as tk
     from tkinter import ttk, messagebox, filedialog
-    root=tk.Tk(); root.title('رصد السياحة الأردنية — 1.3'); root.geometry('1150x720')
+    root=tk.Tk(); root.title('رصد السياحة الأردنية — 1.4'); root.geometry('1150x720')
     cache=pathlib.Path.home()/'JordanTourismMonitor'; cache.mkdir(exist_ok=True); path=cache/'feed.json'
     state=json.loads(path.read_text('utf-8')) if path.exists() else {'items':[]}
     state=prune_archive(state)
@@ -622,6 +622,8 @@ def desktop():
                 w=csv.writer(f); w.writerow(['العنوان','المصدر','وقت النشر','الرابط','الاتجاه التقديري','سبب التصنيف','نطاق القراءة','رابط المصدر'])
                 for r in shown: w.writerow([r['title'],r['source'],r['published'],r['url'],*impact_details(r),text_status(r),r.get('article_url',r['url'])])
     translation_callbacks = {}
+    gemini_key=tk.StringVar()
+    gemini_model=tk.StringVar(value='gemini-2.5-flash')
     def translate_selected():
         if not table.selection():
             note.set('اختر خبرا للترجمة'); return
@@ -631,8 +633,14 @@ def desktop():
         ttk.Label(window,text='راجع النص العربي أو الصق الخبر الكامل؛ المتاح قد يكون عنوانا أو مقتطفا فقط').pack()
         source=tk.Text(window,wrap='word',height=12,font=('Arial',12)); source.pack(fill='both',expand=True,padx=10)
         source.insert('1.0',row.get('title','')+'\n\n'+(row.get('body') or row.get('summary','')))
-        ttk.Label(window,text='المحرك مجاني ومحلي: ثبّت Ollama من ollama.com/download ثم نفّذ: ollama pull qwen3:8b').pack(pady=4)
-        status=tk.StringVar(value='اختر ترجمة بعد مراجعة النص. قد تكون أول ترجمة بطيئة حسب جهازك.')
+        settings=ttk.Frame(window);settings.pack(fill='x',padx=10,pady=5)
+        ttk.Label(settings,text='Gemini API key').pack(side='left')
+        ttk.Entry(settings,textvariable=gemini_key,show='*',width=48).pack(side='left',padx=5)
+        ttk.Combobox(settings,textvariable=gemini_model,values=('gemini-2.5-flash','gemini-2.5-flash-lite'),state='readonly',width=24).pack(side='left')
+        ttk.Button(settings,text='مسح المفتاح',command=lambda:gemini_key.set('')).pack(side='left',padx=5)
+        ttk.Label(window,text='المفتاح يبقى في ذاكرة هذه الجلسة فقط ولا يحفظ في ملفات. الترجمة ترسل النص المعروض إلى Google.').pack(pady=3)
+        ttk.Label(window,text='للنصوص المنشورة: قد تستخدم Google محتوى الفئة المجانية لتحسين خدماتها. أبقِ الفوترة غير مفعلة.').pack(pady=3)
+        status=tk.StringVar(value='أدخل المفتاح ثم راجع النص واضغط ترجمة. الخدمة تحتاج إنترنت وتخضع لحدود حسابك.')
         ttk.Label(window,textvariable=status,wraplength=900).pack()
         result=tk.Text(window,wrap='word',height=15,font=('Arial',12)); result.pack(fill='both',expand=True,padx=10)
         controls=ttk.Frame(window);controls.pack(pady=6)
@@ -647,10 +655,12 @@ def desktop():
         def run():
             text=source.get('1.0','end').strip()
             if not text:status.set('أدخل النص العربي أولا');return
-            start.config(state='disabled');status.set('جارٍ الترجمة محليا…')
+            key=gemini_key.get().strip();model=gemini_model.get()
+            if not key:status.set('أدخل مفتاح Gemini في الحقل أعلاه');return
+            start.config(state='disabled');status.set('جارٍ الترجمة عبر Gemini…')
             translation_callbacks[token]=complete
             def work():
-                try:inbox.put(('translation',(token,True,translation.translate(text))))
+                try:inbox.put(('translation',(token,True,translation.translate(text,api_key=key,model=model))))
                 except Exception as exc:inbox.put(('translation',(token,False,str(exc))))
             threading.Thread(target=work,daemon=True).start()
         def copy_translation():

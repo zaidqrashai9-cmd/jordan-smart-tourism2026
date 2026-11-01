@@ -1,4 +1,4 @@
-"""Free local editorial translation. No cloud credentials or remote model fallback."""
+"""Editorial translation through Gemini; API key kept in session memory only."""
 import json, re, urllib.request, urllib.error
 STYLE = """You are an Arabic-to-English news editor for Jordan tourism monitoring.
 Follow editorial patterns inferred from two user-provided Arabic/English Petra examples;
@@ -30,19 +30,29 @@ def messages(source):
     if not source.strip(): raise ValueError('أدخل النص العربي أولا')
     if len(source)>45000: raise ValueError('النص طويل؛ قسّمه إلى أجزاء أقل من 45000 حرف')
     return [{'role':'system','content':STYLE},{'role':'user','content':'Translate the following Arabic news source in full:\n<news_source>\n'+source+'\n</news_source>'}]
-def translate(source, model='qwen3:8b', opener=None):
-    payload={'model':model,'messages':messages(source),'stream':False,'think':False,
-             'options':{'temperature':0.1,'num_ctx':32768,'num_predict':12000}}
-    request=urllib.request.Request('http://127.0.0.1:11434/api/chat',
-        data=json.dumps(payload).encode(),headers={'Content-Type':'application/json'},method='POST')
+def translate(source, api_key='', model='gemini-2.5-flash', opener=None):
+    prompts=messages(source)
+    key=api_key.strip()
+    if not key or any(c.isspace() for c in key):raise ValueError('أدخل مفتاح Gemini صالحا من Google AI Studio')
+    if model not in ('gemini-2.5-flash','gemini-2.5-flash-lite'):raise ValueError('نموذج غير مدعوم')
+    payload={'systemInstruction':{'parts':[{'text':STYLE}]},
+             'contents':[{'role':'user','parts':[{'text':prompts[1]['content']}]}],
+             'generationConfig':{'temperature':0.1,'maxOutputTokens':16384,'thinkingConfig':{'thinkingBudget':0}}}
+    request=urllib.request.Request('https://generativelanguage.googleapis.com/v1beta/models/'+model+':generateContent',
+        data=json.dumps(payload).encode(),headers={'Content-Type':'application/json','x-goog-api-key':key},method='POST')
     try:
-        with (opener or urllib.request.urlopen)(request,timeout=900) as response:
+        with (opener or urllib.request.urlopen)(request,timeout=180) as response:
             data=json.loads(response.read(2_000_000))
-    except (urllib.error.URLError,TimeoutError,OSError) as exc:
-        raise ValueError('تعذر الاتصال بالنموذج المحلي. ثبّت Ollama وشغله، ثم نفّذ ollama pull qwen3:8b. '+str(exc)[:180]) from exc
-    if data.get('error'): raise ValueError(str(data['error']))
-    if data.get('done_reason')=='length': raise ValueError('توقفت الترجمة بسبب حد الطول؛ قسّم النص إلى أجزاء أصغر')
-    result=data.get('message',{}).get('content','').strip()
-    result=re.sub(r'<think>.*?</think>','',result,flags=re.S).strip()
-    if not result: raise ValueError('لم يرجع النموذج ترجمة؛ حاول مجددا')
+    except urllib.error.HTTPError as exc:
+        errors={400:'المفتاح أو الطلب غير صالح؛ تحقق من مفتاح Gemini.',401:'تعذر التحقق من المفتاح.',403:'المفتاح لا يملك صلاحية الوصول؛ راجع مشروع Google AI Studio.',404:'النموذج غير متاح لحسابك؛ جرب Flash-Lite.',429:'وصلت إلى حد الاستخدام المتاح. انتظر وحاول لاحقا؛ لا تحتاج لتفعيل الفوترة.'}
+        raise ValueError(errors.get(exc.code,'تعذر الاتصال بخدمة الترجمة (HTTP '+str(exc.code)+'). حاول لاحقا.')) from None
+    except (urllib.error.URLError,TimeoutError,OSError):
+        raise ValueError('تعذر الاتصال بـ Gemini؛ تحقق من الإنترنت وحاول لاحقا.') from None
+    if data.get('error'):raise ValueError('رفضت الخدمة الطلب؛ تحقق من المفتاح والصلاحيات.')
+    candidates=data.get('candidates',[])
+    if not candidates:raise ValueError('لم ترجع الخدمة ترجمة؛ قد يكون الطلب محجوبا.')
+    candidate=candidates[0]
+    if candidate.get('finishReason')!='STOP':raise ValueError('لم تكتمل الترجمة؛ قسّم النص أو حاول لاحقا. السبب: '+str(candidate.get('finishReason','unknown')))
+    result='\n'.join(p.get('text','') for p in candidate.get('content',{}).get('parts',[]) if not p.get('thought')).strip()
+    if not result:raise ValueError('لم ترجع الخدمة نصا مترجما.')
     return result
