@@ -1,7 +1,9 @@
 """Jordan Tourism Monitor: standard-library collector and Windows desktop client."""
 from email.utils import parsedate_to_datetime
+import sys
 import html
 import translation
+import petra_names
 import unicodedata
 import queue
 import argparse, concurrent.futures, csv, datetime as dt, hashlib, json, pathlib, re, threading, urllib.parse, urllib.request, webbrowser, xml.etree.ElementTree as ET
@@ -488,7 +490,7 @@ def collect(previous=None):
 def desktop():
     import tkinter as tk
     from tkinter import ttk, messagebox, filedialog
-    root=tk.Tk(); root.title('رصد السياحة الأردنية — 1.5'); root.geometry('1150x720')
+    root=tk.Tk(); root.title('رصد السياحة الأردنية — 1.6'); root.geometry('1150x720')
     cache=pathlib.Path.home()/'JordanTourismMonitor'; cache.mkdir(exist_ok=True); path=cache/'feed.json'
     state=json.loads(path.read_text('utf-8')) if path.exists() else {'items':[]}
     state=prune_archive(state)
@@ -645,22 +647,47 @@ def desktop():
         result=tk.Text(window,wrap='word',height=15,font=('Arial',12)); result.pack(fill='both',expand=True,padx=10)
         controls=ttk.Frame(window);controls.pack(pady=6)
         token=str(id(window))
+        verified={'source':None,'records':[]}
         def complete(ok,payload):
             if not window.winfo_exists(): return
             start.config(state='normal')
+            if ok and isinstance(payload,dict):
+                verified['source']=payload['source'];verified['records']=payload['data']['records']
+                review=tk.Toplevel(window);review.title('مراجعة أسماء بترا — أحدث ذكر عُثر عليه');review.geometry('900x650')
+                evidence=tk.Text(review,wrap='word',font=('Arial',12));evidence.pack(fill='both',expand=True)
+                evidence.insert('1.0',petra_names.report(payload['data']));evidence.config(state='disabled')
+                status.set('اكتمل فحص بترا. راجع نافذة المراجع، ثم اضغط ترجمة لاعتمادها. الأسماء غير الموثقة تحتاج تدقيقا يدويا.')
+                return
             if ok:
                 result.delete('1.0','end');result.insert('1.0',payload)
                 status.set('مسودة مكتملة من النص الذي أدخلته؛ راجع الأسماء والأرقام قبل النشر.')
             else:status.set(payload)
+        def check_names():
+            text=source.get('1.0','end').strip();key=gemini_key.get().strip();model=gemini_model.get()
+            if not text or not key:status.set('أدخل النص ومفتاح Gemini أولا');return
+            verified['source']=None;verified['records']=[]
+            start.config(state='disabled');status.set('جارٍ البحث عن الأسماء في بترا والتحقق من النص والتاريخ؛ قد يستغرق عدة دقائق…')
+            translation_callbacks[token]=complete
+            def work():
+                try:
+                    chosen=translation.available_models(key)[0] if model=='auto' else model
+                    data=petra_names.lookup(text,key,chosen,sys.modules[__name__])
+                    inbox.put(('translation',(token,True,{'source':text,'data':data})))
+                except Exception as exc:inbox.put(('translation',(token,False,str(exc))))
+            threading.Thread(target=work,daemon=True).start()
         def run():
             text=source.get('1.0','end').strip()
             if not text:status.set('أدخل النص العربي أولا');return
             key=gemini_key.get().strip();model=gemini_model.get()
             if not key:status.set('أدخل مفتاح Gemini في الحقل أعلاه');return
+            if verified['source']!=text:
+                check_names();return
+            if not messagebox.askyesno('مراجعة الأسماء والصفات','هل راجعت مراجع بترا وتطابق الأشخاص؟ الأحدث هو أحدث ذكر عُثر عليه فقط. لن تتغير صفة الخبر الأصلي بصمت؛ راجع أي اختلاف قبل النشر.',parent=window):return
+            references=list(verified['records'])
             start.config(state='disabled');status.set('جارٍ اكتشاف النموذج والترجمة عبر Gemini…')
             translation_callbacks[token]=complete
             def work():
-                try:inbox.put(('translation',(token,True,translation.translate(text,api_key=key,model=model))))
+                try:inbox.put(('translation',(token,True,translation.translate(text,api_key=key,model=model,references=references))))
                 except Exception as exc:inbox.put(('translation',(token,False,str(exc))))
             threading.Thread(target=work,daemon=True).start()
         def copy_translation():
@@ -671,6 +698,7 @@ def desktop():
             if not text:return
             target=filedialog.asksaveasfilename(parent=window,defaultextension='.txt',filetypes=[('Text','*.txt')])
             if target:pathlib.Path(target).write_text(text,encoding='utf-8')
+        ttk.Button(controls,text='فحص الأسماء من بترا',command=check_names).pack(side='left',padx=5)
         start=ttk.Button(controls,text='ترجمة إلى الإنجليزية',command=run);start.pack(side='left',padx=5)
         ttk.Button(controls,text='نسخ الإنجليزية',command=copy_translation).pack(side='left',padx=5)
         ttk.Button(controls,text='حفظ TXT',command=save_translation).pack(side='left',padx=5)

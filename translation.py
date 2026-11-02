@@ -51,13 +51,15 @@ def available_models(api_key, opener=None):
     if not result:raise ValueError('لا يظهر نموذج نصي مدعوم من القائمة المجانية لهذا المفتاح. راجع Rate Limit في AI Studio. ظهور النموذج لا يضمن حصة مجانية متاحة.')
     return result
 
-def translate(source, api_key='', model='auto', opener=None):
+def translate(source, api_key='', model='auto', opener=None, system=None, references=None):
     prompts=messages(source)
     key=api_key.strip()
     if not key or any(c.isspace() for c in key):raise ValueError('أدخل مفتاح Gemini صالحا من Google AI Studio')
     if model=='auto':model=available_models(key,opener)[0]
     if model not in FREE_TEXT_MODELS:raise ValueError('نموذج غير مدعوم')
-    payload={'systemInstruction':{'parts':[{'text':STYLE}]},
+    instruction=system or STYLE
+    if references:instruction+='\nHuman-reviewed Petra name references (use name spelling; do not silently replace the source role; flag role conflicts):\n'+json.dumps(references,ensure_ascii=False)
+    payload={'systemInstruction':{'parts':[{'text':instruction}]},
              'contents':[{'role':'user','parts':[{'text':prompts[1]['content']}]}],
              'generationConfig':{'temperature':0.1,'maxOutputTokens':16384}}
     request=urllib.request.Request('https://generativelanguage.googleapis.com/v1beta/models/'+model+':generateContent',

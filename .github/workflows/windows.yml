@@ -5,6 +5,8 @@ on:
     paths:
       - monitor.py
       - translation.py
+      - petra_names.py
+      - monitoring/test_petra_names.py
       - monitoring/test_translation.py
       - .github/workflows/windows.yml
 permissions:
@@ -20,8 +22,9 @@ jobs:
           python-version: '3.12'
       - name: Check Python syntax
         run: |
-          python -m py_compile monitor.py translation.py
+          python -m py_compile monitor.py translation.py petra_names.py
           python monitoring/test_translation.py
+          python monitoring/test_petra_names.py
       - name: Install packaging tool
         run: python -m pip install pyinstaller==6.16.0 trafilatura==2.3.1 googlenewsdecoder==0.2.2
       - name: Build desktop executable
