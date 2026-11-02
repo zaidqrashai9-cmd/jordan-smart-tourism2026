@@ -638,7 +638,7 @@ def desktop():
         if not table.selection():
             note.set('اختر خبرا للترجمة'); return
         row = dict(shown[int(table.selection()[0])])
-        window=tk.Toplevel(root); window.title('ترجمة تحريرية إلى الإنجليزية — مسودة'); window.geometry('950x760')
+        window=tk.Toplevel(root); window.title('ترجمة تحريرية إلى الإنجليزية — مسودة'); window.geometry('1000x900')
         ttk.Label(window,text='أسلوب مستخلص من أمثلة بترا • ترجمة آلية تحتاج مراجعة وليست ترجمة رسمية',wraplength=900).pack(pady=5)
         ttk.Label(window,text='راجع النص العربي أو الصق الخبر الكامل؛ المتاح قد يكون عنوانا أو مقتطفا فقط').pack()
         source=tk.Text(window,wrap='word',height=12,font=('Arial',12)); source.pack(fill='both',expand=True,padx=10)
@@ -653,6 +653,8 @@ def desktop():
         status=tk.StringVar(value='أدخل المفتاح ثم راجع النص واضغط ترجمة. الخدمة تحتاج إنترنت وتخضع لحدود حسابك.')
         ttk.Label(window,textvariable=status,wraplength=900).pack()
         result=tk.Text(window,wrap='word',height=15,font=('Arial',12)); result.pack(fill='both',expand=True,padx=10)
+        ttk.Label(window,text='مرجع بترا الإنجليزي لنفس الخبر (اختياري): الصق النص المنشور لضبط أسماء المنشآت والفعاليات والشعارات؛ تأكد أنه لنفس الخبر').pack()
+        editorial=tk.Text(window,wrap='word',height=3,font=('Arial',11));editorial.pack(fill='x',padx=10)
         controls=ttk.Frame(window);controls.pack(pady=6)
         token=str(id(window))
         verified={'source':None,'records':[]}
@@ -692,10 +694,12 @@ def desktop():
                 check_names();return
             if not messagebox.askyesno('مراجعة الأسماء والصفات','هل راجعت مراجع بترا وتطابق الأشخاص؟ الأحدث هو أحدث ذكر عُثر عليه فقط. لن تتغير صفة الخبر الأصلي بصمت؛ راجع أي اختلاف قبل النشر.',parent=window):return
             references=list(verified['records'])
+            editorial_text=editorial.get('1.0','end').strip()
+            if len(editorial_text)>15000:status.set('مرجع الصياغة طويل؛ الحد 15000 حرف');return
             start.config(state='disabled');status.set('جارٍ اكتشاف النموذج والترجمة عبر Gemini…')
             translation_callbacks[token]=complete
             def work():
-                try:inbox.put(('translation',(token,True,translation.translate(text,api_key=key,model=model,references=references))))
+                try:inbox.put(('translation',(token,True,translation.translate(text,api_key=key,model=model,references=references,editorial_reference=editorial_text))))
                 except Exception as exc:inbox.put(('translation',(token,False,str(exc))))
             threading.Thread(target=work,daemon=True).start()
         def copy_translation():
