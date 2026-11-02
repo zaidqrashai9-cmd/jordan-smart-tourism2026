@@ -490,7 +490,7 @@ def collect(previous=None):
 def desktop():
     import tkinter as tk
     from tkinter import ttk, messagebox, filedialog
-    root=tk.Tk(); root.title('رصد السياحة الأردنية — 1.6'); root.geometry('1150x720')
+    root=tk.Tk(); root.title('وحدة الاعلام - وزارة السياحة'); root.geometry('1200x860')
     cache=pathlib.Path.home()/'JordanTourismMonitor'; cache.mkdir(exist_ok=True); path=cache/'feed.json'
     state=json.loads(path.read_text('utf-8')) if path.exists() else {'items':[]}
     state=prune_archive(state)
@@ -500,7 +500,15 @@ def desktop():
     selected_keyword=tk.StringVar(value='كل الكلمات')
     impact=tk.StringVar(value='كل الاتجاهات')
     scope=tk.StringVar(value='مرتبط بالسياحة'); shown=[]; period=tk.StringVar(value='الكل'); count=tk.StringVar(); keyword=tk.StringVar(); endpoint=tk.StringVar(); note=tk.StringVar(value='الأخبار عبر RSS • فيسبوك وإنستغرام وX غير مربوطين بعد')
-    ttk.Label(root,text='رصد السياحة الأردنية',font=('Arial',22)).pack(pady=12)
+    header=tk.Frame(root,bg='white');header.pack(fill='x',padx=16,pady=6)
+    asset_root=pathlib.Path(getattr(sys,'_MEIPASS',pathlib.Path(__file__).resolve().parent))
+    logo_path=asset_root/'assets'/'ministry-logo.png'
+    if logo_path.exists():
+        root.ministry_logo=tk.PhotoImage(file=str(logo_path)).subsample(6,6)
+        tk.Label(header,image=root.ministry_logo,bg='white').pack(side='right',padx=16)
+        root.iconphoto(True,root.ministry_logo)
+    tk.Label(header,text='وحدة الاعلام - وزارة السياحة',font=('Arial',22,'bold'),fg='#22376b',bg='white').pack(side='right',padx=12)
+
     bar=ttk.Frame(root); bar.pack(fill='x',padx=16)
     ttk.Label(bar,text='بحث').pack(side='right'); ttk.Entry(bar,textvariable=keyword,width=45).pack(side='right')
     ttk.Label(bar,text='الفترة').pack(side='right',padx=8)
@@ -737,6 +745,8 @@ def desktop():
 if __name__=='__main__':
     p=argparse.ArgumentParser(); p.add_argument('--self-check',action='store_true'); p.add_argument('--collect',action='store_true'); p.add_argument('--output',default='feed.json'); a=p.parse_args()
     if a.self_check:
+        logo_asset=pathlib.Path(getattr(sys,'_MEIPASS',pathlib.Path(__file__).resolve().parent))/'assets'/'ministry-logo.png'
+        assert logo_asset.read_bytes().startswith(b'\x89PNG\r\n\x1a\n'), 'Missing ministry logo'
         from googlenewsdecoder import gnewsdecoder
         from trafilatura import extract
         sample = '<html><body><article><p>' + ('Jordan tourism and heritage news. ' * 30) + '</p></article></body></html>'
