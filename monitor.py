@@ -491,7 +491,7 @@ def collect(previous=None):
 def desktop():
     import tkinter as tk
     from tkinter import ttk, messagebox, filedialog
-    root=tk.Tk(); root.title('وحدة الاعلام - وزارة السياحة'); root.geometry('1200x860')
+    root=tk.Tk(); root.title('وحدة الاعلام - وزارة السياحة'); root.geometry(str(min(1200,root.winfo_screenwidth()-60))+'x'+str(min(820,root.winfo_screenheight()-100)))
     cache=pathlib.Path.home()/'JordanTourismMonitor'; cache.mkdir(exist_ok=True); path=cache/'feed.json'
     state=json.loads(path.read_text('utf-8')) if path.exists() else {'items':[]}
     state=prune_archive(state)
@@ -505,11 +505,12 @@ def desktop():
     asset_root=pathlib.Path(getattr(sys,'_MEIPASS',pathlib.Path(__file__).resolve().parent))
     logo_path=asset_root/'assets'/'ministry-logo.png'
     if logo_path.exists():
-        root.ministry_logo=tk.PhotoImage(file=str(logo_path)).subsample(6,6)
+        root.ministry_logo=tk.PhotoImage(file=str(logo_path)).subsample(12,12)
         tk.Label(header,image=root.ministry_logo,bg='white').pack(side='right',padx=16)
         root.iconphoto(True,root.ministry_logo)
     tk.Label(header,text='وحدة الاعلام - وزارة السياحة',font=('Arial',22,'bold'),fg='#22376b',bg='white').pack(side='right',padx=12)
 
+    action_bar=ttk.Frame(root);action_bar.pack(fill='x',padx=16,pady=5)
     bar=ttk.Frame(root); bar.pack(fill='x',padx=16)
     ttk.Label(bar,text='بحث').pack(side='right'); ttk.Entry(bar,textvariable=keyword,width=45).pack(side='right')
     ttk.Label(bar,text='الفترة').pack(side='right',padx=8)
@@ -644,11 +645,22 @@ def desktop():
             note.set('اختر خبرا للترجمة'); return
         row = dict(shown[int(table.selection()[0])])
         window=tk.Toplevel(root); window.title('ترجمة تحريرية إلى الإنجليزية — مسودة'); window.geometry('1000x900')
-        ttk.Label(window,text='أسلوب مستخلص من أمثلة بترا • ترجمة آلية تحتاج مراجعة وليست ترجمة رسمية',wraplength=900).pack(pady=5)
-        ttk.Label(window,text='راجع النص العربي أو الصق الخبر الكامل؛ المتاح قد يكون عنوانا أو مقتطفا فقط').pack()
-        source=tk.Text(window,wrap='word',height=12,font=('Arial',12)); source.pack(fill='both',expand=True,padx=10)
+        window.geometry(str(min(1050,root.winfo_screenwidth()-80))+'x'+str(min(820,root.winfo_screenheight()-120)))
+        controls=ttk.Frame(window);controls.pack(side='bottom',fill='x',padx=8,pady=8)
+        viewport=ttk.Frame(window);viewport.pack(fill='both',expand=True)
+        canvas=tk.Canvas(viewport,highlightthickness=0,height=350)
+        scrollbar=ttk.Scrollbar(viewport,orient='vertical',command=canvas.yview)
+        scrollbar.pack(side='right',fill='y');canvas.pack(side='left',fill='both',expand=True)
+        canvas.configure(yscrollcommand=scrollbar.set)
+        content=ttk.Frame(canvas)
+        content_id=canvas.create_window((0,0),window=content,anchor='nw')
+        content.bind('<Configure>',lambda e:canvas.configure(scrollregion=canvas.bbox('all')))
+        canvas.bind('<Configure>',lambda e:canvas.itemconfigure(content_id,width=e.width))
+        ttk.Label(content,text='أسلوب مستخلص من أمثلة بترا • ترجمة آلية تحتاج مراجعة وليست ترجمة رسمية',wraplength=900).pack(pady=5)
+        ttk.Label(content,text='راجع النص العربي أو الصق الخبر الكامل؛ المتاح قد يكون عنوانا أو مقتطفا فقط').pack()
+        source=tk.Text(content,wrap='word',height=12,font=('Arial',12)); source.pack(fill='both',expand=True,padx=10)
         source.insert('1.0',row.get('title','')+'\n\n'+(row.get('body') or row.get('summary','')))
-        settings=ttk.Frame(window);settings.pack(fill='x',padx=10,pady=5)
+        settings=ttk.Frame(content);settings.pack(fill='x',padx=10,pady=5)
         ttk.Label(settings,text='Gemini API key').pack(side='left')
         ttk.Entry(settings,textvariable=gemini_key,show='*',width=48).pack(side='left',padx=5)
         ttk.Combobox(settings,textvariable=gemini_model,values=('auto',*translation.FREE_TEXT_MODELS),state='readonly',width=24).pack(side='left')
@@ -666,16 +678,15 @@ def desktop():
             except (RuntimeError,ValueError,OSError) as exc:
                 remember_key.set(False);status.set(str(exc))
         ttk.Button(settings,text='نسيان المفتاح المحفوظ',command=forget_saved).pack(side='left',padx=5)
-        ttk.Checkbutton(window,text='حفظ المفتاح على هذا الجهاز (تشفير Windows)',variable=remember_key,command=save_preference).pack()
-        ttk.Button(window,text='حفظ / تحديث المفتاح المحفوظ',command=lambda:(remember_key.set(True),save_preference())).pack()
-        ttk.Label(window,text='الحفظ اختياري ومشفر لحساب Windows خارج مجلد التطبيق. مشاركة مجلد التطبيق لا تشمل المفتاح. الترجمة ترسل النص إلى Google.').pack(pady=3)
-        ttk.Label(window,text='للنصوص المنشورة: قد تستخدم Google محتوى الفئة المجانية لتحسين خدماتها. أبقِ الفوترة غير مفعلة.').pack(pady=3)
+        ttk.Checkbutton(content,text='حفظ المفتاح على هذا الجهاز (تشفير Windows)',variable=remember_key,command=save_preference).pack()
+        ttk.Button(content,text='حفظ / تحديث المفتاح المحفوظ',command=lambda:(remember_key.set(True),save_preference())).pack()
+        ttk.Label(content,text='الحفظ اختياري ومشفر لحساب Windows خارج مجلد التطبيق. مشاركة مجلد التطبيق لا تشمل المفتاح. الترجمة ترسل النص إلى Google.').pack(pady=3)
+        ttk.Label(content,text='للنصوص المنشورة: قد تستخدم Google محتوى الفئة المجانية لتحسين خدماتها. أبقِ الفوترة غير مفعلة.').pack(pady=3)
         status=tk.StringVar(value=key_load_error or ('تم تحميل المفتاح المحفوظ تلقائيا' if gemini_key.get() else 'أدخل المفتاح مرة واحدة واختر حفظه على هذا الجهاز'))
-        ttk.Label(window,textvariable=status,wraplength=900).pack()
-        result=tk.Text(window,wrap='word',height=15,font=('Arial',12)); result.pack(fill='both',expand=True,padx=10)
-        ttk.Label(window,text='مرجع بترا الإنجليزي لنفس الخبر (اختياري): الصق النص المنشور لضبط أسماء المنشآت والفعاليات والشعارات؛ تأكد أنه لنفس الخبر').pack()
-        editorial=tk.Text(window,wrap='word',height=3,font=('Arial',11));editorial.pack(fill='x',padx=10)
-        controls=ttk.Frame(window);controls.pack(pady=6)
+        ttk.Label(content,textvariable=status,wraplength=900).pack()
+        result=tk.Text(content,wrap='word',height=15,font=('Arial',12)); result.pack(fill='both',expand=True,padx=10)
+        ttk.Label(content,text='مرجع بترا الإنجليزي لنفس الخبر (اختياري): الصق النص المنشور لضبط أسماء المنشآت والفعاليات والشعارات؛ تأكد أنه لنفس الخبر').pack()
+        editorial=tk.Text(content,wrap='word',height=3,font=('Arial',11));editorial.pack(fill='x',padx=10)
         token=str(id(window))
         verified={'source':None,'records':[]}
         def complete(ok,payload):
@@ -735,9 +746,9 @@ def desktop():
         ttk.Button(controls,text='نسخ الإنجليزية',command=copy_translation).pack(side='left',padx=5)
         ttk.Button(controls,text='حفظ TXT',command=save_translation).pack(side='left',padx=5)
         window.bind('<Destroy>',lambda event:translation_callbacks.pop(token,None) if event.widget is window else None)
-    ttk.Button(bar,text='ترجمة إلى الإنجليزية',command=translate_selected).pack(side='left')
-    ttk.Button(bar,text='قراءة نص الخبر',command=read_selected).pack(side='left')
-    refresh=ttk.Button(bar,text='تحديث',command=update); refresh.pack(side='left'); ttk.Button(bar,text='تصدير CSV',command=export).pack(side='left')
+    ttk.Button(action_bar,text='ترجمة إلى الإنجليزية',command=translate_selected).pack(side='left')
+    ttk.Button(action_bar,text='قراءة نص الخبر',command=read_selected).pack(side='left')
+    refresh=ttk.Button(action_bar,text='تحديث',command=update); refresh.pack(side='left'); ttk.Button(action_bar,text='تصدير CSV',command=export).pack(side='left')
     ttk.Label(root,text='بحث كل ساعة • حذف تلقائي بعد 4 أيام من النشر (ومن الاكتشاف عند غياب التاريخ) • جلب حتى 40 نصا بكل دورة').pack(pady=4)
     ttk.Label(root,text='رابط HTTPS لنتائج الخدمة السحابية (اختياري؛ تركه فارغًا يجمع الأخبار على الجهاز)').pack()
     ttk.Entry(root,textvariable=endpoint,width=100).pack(pady=5); ttk.Label(root,textvariable=note,wraplength=1050).pack(pady=8)

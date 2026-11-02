@@ -4,6 +4,7 @@ on:
   push:
     paths:
       - monitor.py
+      - monitoring/test_desktop_layout.py
       - assets/**
       - translation.py
       - credential_store.py
@@ -26,6 +27,7 @@ jobs:
       - name: Check Python syntax
         run: |
           python -m py_compile monitor.py translation.py petra_names.py credential_store.py
+          python monitoring/test_desktop_layout.py
           python monitoring/test_credential_store.py
           python monitoring/test_translation.py
           python monitoring/test_petra_names.py
