@@ -3,6 +3,7 @@ from email.utils import parsedate_to_datetime
 import sys
 import html
 import translation
+import credential_store
 import petra_names
 import unicodedata
 import queue
@@ -632,7 +633,11 @@ def desktop():
                 w=csv.writer(f); w.writerow(['العنوان','المصدر','وقت النشر','الرابط','الاتجاه التقديري','سبب التصنيف','نطاق القراءة','رابط المصدر'])
                 for r in shown: w.writerow([r['title'],r['source'],r['published'],r['url'],*impact_details(r),text_status(r),r.get('article_url',r['url'])])
     translation_callbacks = {}
-    gemini_key=tk.StringVar()
+    saved_key='';key_load_error=''
+    try:saved_key=credential_store.load_key()
+    except RuntimeError as exc:key_load_error=str(exc)
+    gemini_key=tk.StringVar(value=saved_key)
+    remember_key=tk.BooleanVar(value=bool(saved_key))
     gemini_model=tk.StringVar(value='auto')
     def translate_selected():
         if not table.selection():
@@ -647,10 +652,25 @@ def desktop():
         ttk.Label(settings,text='Gemini API key').pack(side='left')
         ttk.Entry(settings,textvariable=gemini_key,show='*',width=48).pack(side='left',padx=5)
         ttk.Combobox(settings,textvariable=gemini_model,values=('auto',*translation.FREE_TEXT_MODELS),state='readonly',width=24).pack(side='left')
-        ttk.Button(settings,text='مسح المفتاح',command=lambda:gemini_key.set('')).pack(side='left',padx=5)
-        ttk.Label(window,text='المفتاح يبقى في ذاكرة هذه الجلسة فقط ولا يحفظ في ملفات. الترجمة ترسل النص المعروض إلى Google.').pack(pady=3)
+        def forget_saved():
+            try:credential_store.forget_key()
+            except OSError:status.set('تعذر حذف المفتاح المحفوظ؛ تحقق من صلاحيات المستخدم');return
+            gemini_key.set('');remember_key.set(False);status.set('تم حذف المفتاح المحفوظ ومسحه من الجلسة')
+        def save_preference():
+            try:
+                if remember_key.get():
+                    credential_store.save_key(gemini_key.get())
+                    status.set('تم حفظ المفتاح مشفرا لحساب Windows الحالي')
+                else:
+                    credential_store.forget_key();status.set('أُلغي الحفظ؛ المفتاح الحالي لهذه الجلسة فقط')
+            except (RuntimeError,ValueError,OSError) as exc:
+                remember_key.set(False);status.set(str(exc))
+        ttk.Button(settings,text='نسيان المفتاح المحفوظ',command=forget_saved).pack(side='left',padx=5)
+        ttk.Checkbutton(window,text='حفظ المفتاح على هذا الجهاز (تشفير Windows)',variable=remember_key,command=save_preference).pack()
+        ttk.Button(window,text='حفظ / تحديث المفتاح المحفوظ',command=lambda:(remember_key.set(True),save_preference())).pack()
+        ttk.Label(window,text='الحفظ اختياري ومشفر لحساب Windows خارج مجلد التطبيق. مشاركة مجلد التطبيق لا تشمل المفتاح. الترجمة ترسل النص إلى Google.').pack(pady=3)
         ttk.Label(window,text='للنصوص المنشورة: قد تستخدم Google محتوى الفئة المجانية لتحسين خدماتها. أبقِ الفوترة غير مفعلة.').pack(pady=3)
-        status=tk.StringVar(value='أدخل المفتاح ثم راجع النص واضغط ترجمة. الخدمة تحتاج إنترنت وتخضع لحدود حسابك.')
+        status=tk.StringVar(value=key_load_error or ('تم تحميل المفتاح المحفوظ تلقائيا' if gemini_key.get() else 'أدخل المفتاح مرة واحدة واختر حفظه على هذا الجهاز'))
         ttk.Label(window,textvariable=status,wraplength=900).pack()
         result=tk.Text(window,wrap='word',height=15,font=('Arial',12)); result.pack(fill='both',expand=True,padx=10)
         ttk.Label(window,text='مرجع بترا الإنجليزي لنفس الخبر (اختياري): الصق النص المنشور لضبط أسماء المنشآت والفعاليات والشعارات؛ تأكد أنه لنفس الخبر').pack()

@@ -6,6 +6,8 @@ on:
       - monitor.py
       - assets/**
       - translation.py
+      - credential_store.py
+      - monitoring/test_credential_store.py
       - petra_names.py
       - monitoring/test_petra_names.py
       - monitoring/test_translation.py
@@ -23,7 +25,8 @@ jobs:
           python-version: '3.12'
       - name: Check Python syntax
         run: |
-          python -m py_compile monitor.py translation.py petra_names.py
+          python -m py_compile monitor.py translation.py petra_names.py credential_store.py
+          python monitoring/test_credential_store.py
           python monitoring/test_translation.py
           python monitoring/test_petra_names.py
       - name: Install packaging tool
