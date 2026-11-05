@@ -689,6 +689,15 @@ def desktop():
         editorial=tk.Text(content,wrap='word',height=3,font=('Arial',11));editorial.pack(fill='x',padx=10)
         token=str(id(window))
         verified={'source':None,'records':[]}
+        glossary=[]
+        def import_glossary():
+            path=filedialog.askopenfilename(parent=window,filetypes=[('CSV','*.csv')])
+            if not path:return
+            try:rows=translation.read_protocol_glossary(path)
+            except (OSError,ValueError) as exc:status.set('تعذر قراءة القاموس: '+str(exc));return
+            glossary[:]=rows
+            status.set(f'تم تحميل {len(rows)} لقب معتمد من القاموس')
+        ttk.Button(content,text='استيراد قاموس رصد (CSV)',command=import_glossary).pack()
         def complete(ok,payload):
             if not window.winfo_exists(): return
             start.config(state='normal')
@@ -725,12 +734,13 @@ def desktop():
                 check_names();return
             if not messagebox.askyesno('مراجعة الأسماء والصفات','هل راجعت مراجع بترا وتطابق الأشخاص؟ الأحدث هو أحدث ذكر عُثر عليه فقط. لن تتغير صفة الخبر الأصلي بصمت؛ راجع أي اختلاف قبل النشر.',parent=window):return
             references=list(verified['records'])
+            protocol=[entry for entry in glossary if translation.protocol_matches(entry['ar'],text)][:20]
             editorial_text=editorial.get('1.0','end').strip()
             if len(editorial_text)>15000:status.set('مرجع الصياغة طويل؛ الحد 15000 حرف');return
             start.config(state='disabled');status.set('جارٍ اكتشاف النموذج والترجمة عبر Gemini…')
             translation_callbacks[token]=complete
             def work():
-                try:inbox.put(('translation',(token,True,translation.translate(text,api_key=key,model=model,references=references,editorial_reference=editorial_text))))
+                try:inbox.put(('translation',(token,True,translation.translate(text,api_key=key,model=model,references=references,editorial_reference=editorial_text,protocol=protocol))))
                 except Exception as exc:inbox.put(('translation',(token,False,str(exc))))
             threading.Thread(target=work,daemon=True).start()
         def copy_translation():
