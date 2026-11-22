@@ -488,6 +488,8 @@ def collect(previous=None):
     enrich_pending(rows)
     rows = {r['id']: r for r in prune_archive({'items': list(rows.values())})['items']}
     return dict(updated=dt.datetime.now(dt.timezone.utc).isoformat(),items=sorted_articles(rows.values()),sources=status,social_coverage='Not connected: Facebook, Instagram, X')
+TRANSLATION_ENABLED = False  # Re-enable to restore the retained translation UI.
+
 def desktop():
     import tkinter as tk
     from tkinter import ttk, messagebox, filedialog
@@ -635,7 +637,8 @@ def desktop():
                 for r in shown: w.writerow([r['title'],r['source'],r['published'],r['url'],*impact_details(r),text_status(r),r.get('article_url',r['url'])])
     translation_callbacks = {}
     saved_key='';key_load_error=''
-    try:saved_key=credential_store.load_key()
+    try:
+        if TRANSLATION_ENABLED:saved_key=credential_store.load_key()
     except RuntimeError as exc:key_load_error=str(exc)
     gemini_key=tk.StringVar(value=saved_key)
     remember_key=tk.BooleanVar(value=bool(saved_key))
@@ -756,7 +759,8 @@ def desktop():
         ttk.Button(controls,text='نسخ الإنجليزية',command=copy_translation).pack(side='left',padx=5)
         ttk.Button(controls,text='حفظ TXT',command=save_translation).pack(side='left',padx=5)
         window.bind('<Destroy>',lambda event:translation_callbacks.pop(token,None) if event.widget is window else None)
-    ttk.Button(action_bar,text='ترجمة إلى الإنجليزية',command=translate_selected).pack(side='left')
+    if TRANSLATION_ENABLED:
+        ttk.Button(action_bar,text='ترجمة إلى الإنجليزية',command=translate_selected).pack(side='left')
     ttk.Button(action_bar,text='قراءة نص الخبر',command=read_selected).pack(side='left')
     refresh=ttk.Button(action_bar,text='تحديث',command=update); refresh.pack(side='left'); ttk.Button(action_bar,text='تصدير CSV',command=export).pack(side='left')
     ttk.Label(root,text='بحث كل ساعة • حذف تلقائي بعد 4 أيام من النشر (ومن الاكتشاف عند غياب التاريخ) • جلب حتى 40 نصا بكل دورة').pack(pady=4)

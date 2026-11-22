@@ -17,6 +17,9 @@ class LayoutTests(unittest.TestCase):
     try:
      root.geometry('900x650');root.tk.call('tk','scaling',1.5);root.update_idletasks()
      buttons=[w for w in descendants(root) if isinstance(w,ttk.Button) and w.cget('text')=='ترجمة إلى الإنجليزية']
+     if not monitor.TRANSLATION_ENABLED:
+      self.assertEqual(buttons,[])
+      return
      self.assertEqual(len(buttons),1)
      button=buttons[0]
      self.assertTrue(button.winfo_ismapped())
