@@ -1,0 +1,16 @@
+feature,area,priority,original,clone,notes
+Source filter,results,must,yes,yes,Uses existing publisher field
+Named saved filters,results,must,yes,yes,Local presets include current date/language/relevance/impact/query/source options
+Summary metrics,analytics,must,yes,yes,Only observed collected results; no reach estimates
+Daily mention histogram,analytics,must,yes,yes,Publication day in Jordan timezone
+Source distribution,analytics,must,yes,yes,Counts of matching materials
+Sentiment distribution,analytics,must,yes,yes,Existing conservative estimate unchanged
+Topic overview,analytics,should,yes,partial,Transparent keyword rules rather than proprietary AI
+Volume comparison,analytics,should,yes,partial,24h comparison only in All; explicit limited history; descriptive
+Favorites,editorial,should,unknown,yes,Independent local editorial marker
+Similar-title grouping,editorial,should,unknown,yes,Independent conservative algorithm; retains every original
+CSV export,reporting,must,yes,yes,All matched raw materials with formula escaping
+Licensed social feeds,discovery,could,yes,skip,Not transferable; existing social integrations remain unconnected
+Reach and influence metrics,analytics,could,yes,skip,No reliable data; do not fabricate
+AI assistant,analytics,could,yes,skip,No extra paid model; translation remains hidden
+Shared team accounts,collaboration,could,yes,skip,Separate infrastructure beyond this desktop slice

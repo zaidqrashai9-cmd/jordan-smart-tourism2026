@@ -4,6 +4,8 @@ on:
   push:
     paths:
       - monitor.py
+      - listening_tools.py
+      - monitoring/test_listening*.py
       - monitoring/test_desktop_layout.py
       - assets/**
       - translation.py
@@ -26,7 +28,9 @@ jobs:
           python-version: '3.12'
       - name: Check Python syntax
         run: |
-          python -m py_compile monitor.py translation.py petra_names.py credential_store.py
+          python -m py_compile monitor.py translation.py petra_names.py credential_store.py listening_tools.py
+          python monitoring/test_listening_tools.py
+          python monitoring/test_listening_desktop.py
           python monitoring/test_desktop_layout.py
           python monitoring/test_credential_store.py
           python monitoring/test_translation.py

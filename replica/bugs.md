@@ -1,0 +1,2 @@
+# Verification record
+Local helper, translation, names and credential tests pass (Windows-specific credential checks skip on Linux). Local GUI test could not execute because the host has no display; Windows CI runs the real Tk workflows and packaged executable check before delivery. No reproduced unresolved S1/S2 defects at this checkpoint. Build status is available in the linked GitHub commit checks.

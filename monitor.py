@@ -3,6 +3,7 @@ from email.utils import parsedate_to_datetime
 import sys
 import html
 import translation
+import listening_tools
 import credential_store
 import petra_names
 import unicodedata
@@ -492,12 +493,19 @@ TRANSLATION_ENABLED = False  # Re-enable to restore the retained translation UI.
 
 def desktop():
     import tkinter as tk
-    from tkinter import ttk, messagebox, filedialog
+    from tkinter import ttk, messagebox, filedialog, simpledialog
     root=tk.Tk(); root.title('وحدة الاعلام - وزارة السياحة'); root.geometry(str(min(1200,root.winfo_screenwidth()-60))+'x'+str(min(820,root.winfo_screenheight()-100)))
     cache=pathlib.Path.home()/'JordanTourismMonitor'; cache.mkdir(exist_ok=True); path=cache/'feed.json'
     state=json.loads(path.read_text('utf-8')) if path.exists() else {'items':[]}
     state=prune_archive(state)
     path.write_text(json.dumps(state,ensure_ascii=False),encoding='utf-8')
+    preferences_path=cache/'listening-preferences.json'
+    preferences=listening_tools.load_preferences(preferences_path)
+    favorites=set(preferences['favorites'])
+    def save_preferences():
+        preferences['favorites']=sorted(favorites)
+        try:listening_tools.save_preferences(preferences_path,preferences)
+        except OSError:note.set('تعذر حفظ التفضيلات على الجهاز؛ التغيير متاح لهذه الجلسة')
     inbox = queue.Queue()
     language=tk.StringVar(value='الكل / All')
     selected_keyword=tk.StringVar(value='كل الكلمات')
@@ -528,28 +536,133 @@ def desktop():
     ttk.Label(impact_bar,text='اتجاه الخبر').pack(side='right',padx=8)
     ttk.Combobox(impact_bar,textvariable=impact,values=('كل الاتجاهات', 'إيجابي', 'سلبي', 'محايد', 'يحتاج مراجعة'),state='readonly',width=20).pack(side='right')
     ttk.Label(impact_bar,text='تصنيف تقديري من النص المتاح • اختر خبرا لعرض السبب').pack(side='right',padx=12)
+    tools_bar=ttk.Frame(root);tools_bar.pack(fill='x',padx=16,pady=4)
+    publisher=tk.StringVar(value='كل المصادر')
+    grouped=tk.BooleanVar(value=False)
+    favorites_only=tk.BooleanVar(value=False)
+    ttk.Label(tools_bar,text='المصدر').pack(side='right')
+    source_box=ttk.Combobox(tools_bar,textvariable=publisher,values=('كل المصادر',),state='readonly',width=23)
+    source_box.pack(side='right',padx=5)
+    ttk.Checkbutton(tools_bar,text='تجميع المتشابه',variable=grouped).pack(side='right',padx=8)
+    ttk.Checkbutton(tools_bar,text='المفضلة فقط',variable=favorites_only).pack(side='right',padx=8)
+    selected_saved=tk.StringVar(value='عمليات البحث المحفوظة')
+    saved_box=ttk.Combobox(tools_bar,textvariable=selected_saved,values=tuple(preferences['searches']),state='readonly',width=24)
+    saved_box.pack(side='left',padx=5)
     reason_note=tk.StringVar()
     ttk.Label(root,textvariable=reason_note,wraplength=1050).pack(pady=3)
     ttk.Label(root,textvariable=count).pack(pady=4)
-    table=ttk.Treeview(root,columns=('title','source','published','relevance','impact','text'),show='headings')
-    for c,label,width in [('title','العنوان',650),('source','المصدر',180),('published','وقت النشر — الأردن',170),('relevance','الصلة',90),('impact','الاتجاه التقديري',110),('text','نطاق القراءة',150)]: table.heading(c,text=label); table.column(c,width=width)
-    table.pack(fill='both',expand=True,padx=16,pady=10)
+    results_frame=ttk.Frame(root);results_frame.pack(fill='both',expand=True,padx=16,pady=6)
+    results_frame.rowconfigure(0,weight=1);results_frame.columnconfigure(0,weight=1)
+    table=ttk.Treeview(results_frame,columns=('title','source','published','relevance','impact','text','copies'),show='headings')
+    for c,label,width in [('title','العنوان',650),('source','المصدر',180),('published','وقت النشر — الأردن',170),('relevance','الصلة',90),('impact','الاتجاه التقديري',110),('text','نطاق القراءة',150),('copies','نسخ متشابهة',90)]: table.heading(c,text=label); table.column(c,width=width)
+    table.grid(row=0,column=0,sticky='nsew')
+    vertical=ttk.Scrollbar(results_frame,orient='vertical',command=table.yview);vertical.grid(row=0,column=1,sticky='ns')
+    horizontal=ttk.Scrollbar(results_frame,orient='horizontal',command=table.xview);horizontal.grid(row=1,column=0,sticky='ew')
+    table.configure(yscrollcommand=vertical.set,xscrollcommand=horizontal.set)
+    candidates=[]; shown_groups=[]
     def render(*_):
-        table.delete(*table.get_children()); shown.clear()
+        selected_id=shown[int(table.selection()[0])]['id'] if table.selection() else None
+        table.delete(*table.get_children()); shown.clear();candidates.clear();shown_groups.clear()
+        source_box.configure(values=('كل المصادر',*sorted({listening_tools.source_name(r) for r in state['items']})))
         now = dt.datetime.now(dt.timezone.utc)
         for row in sorted_articles(state['items']):
             label = relevance(row)
             if scope.get() == 'مرتبط بالسياحة':
                 if label not in ('مباشر', 'غير مباشر'): continue
             elif label != scope.get(): continue
+            if publisher.get()!='كل المصادر' and listening_tools.source_name(row)!=publisher.get():continue
+            if favorites_only.get() and row['id'] not in favorites:continue
             if not matches_period(row, period.get(), now): continue
             if not matches_language(row, language.get()): continue
             if not matches_keyword(row, selected_keyword.get()): continue
             direction, reason = impact_details(row)
             if impact.get() != 'كل الاتجاهات' and direction != impact.get(): continue
-            if search_matches(row, keyword.get()):
-                shown.append(row); table.insert('', 'end',iid=str(len(shown)-1),values=(row['title'],row['source'],publication_time(row).astimezone(JORDAN_TIME).strftime('%Y-%m-%d %H:%M') if publication_time(row) else 'غير معروف',label,direction,text_status(row)))
-        count.set(f'المعروض: {len(shown)} من {len(state["items"])} | بتوقيت الأردن | حسب وقت النشر؛ التواريخ غير المعروفة تظهر في الكل فقط')
+            if search_matches(row, keyword.get()):candidates.append(row)
+        groups=listening_tools.group_stories(candidates) if grouped.get() else [[r] for r in candidates]
+        for group in groups:
+            row=group[0];label=relevance(row);direction=impact_details(row)[0]
+            shown.append(row);shown_groups.append(group)
+            title=('★ ' if row['id'] in favorites else '')+row['title']
+            table.insert('', 'end',iid=str(len(shown)-1),values=(title,row['source'],publication_time(row).astimezone(JORDAN_TIME).strftime('%Y-%m-%d %H:%M') if publication_time(row) else 'غير معروف',label,direction,text_status(row),len(group)))
+            if row['id']==selected_id:table.selection_set(str(len(shown)-1))
+        count.set(f'المعروض: {len(shown)} | نتائج الفلاتر: {len(candidates)} | الأرشيف: {len(state["items"])} | بتوقيت الأردن • التجميع تقديري ولا يحذف الأخبار')
+    for variable in (publisher,grouped,favorites_only):variable.trace_add('write',render)
+    search_fields={'query':keyword,'period':period,'scope':scope,'language':language,'keyword':selected_keyword,'impact':impact,'source':publisher,'grouped':grouped,'favorites':favorites_only}
+    def save_search():
+        name=simpledialog.askstring('حفظ البحث','اسم عملية البحث:',parent=root)
+        if not name or not name.strip():return
+        name=name.strip()[:80]
+        if name in preferences['searches'] and not messagebox.askyesno('حفظ البحث','استبدال البحث المحفوظ بنفس الاسم؟',parent=root):return
+        preferences['searches'][name]={key:var.get() for key,var in search_fields.items()}
+        save_preferences();saved_box.configure(values=tuple(preferences['searches']));selected_saved.set(name)
+        note.set('تم حفظ البحث والفلاتر على هذا الجهاز')
+    def load_search(_=None):
+        for key,value in preferences['searches'].get(selected_saved.get(),{}).items():
+            if key in search_fields:search_fields[key].set(value)
+        render()
+    def delete_search():
+        name=selected_saved.get()
+        if name in preferences['searches']:
+            del preferences['searches'][name];save_preferences()
+            saved_box.configure(values=tuple(preferences['searches']));selected_saved.set('عمليات البحث المحفوظة')
+    saved_box.bind('<<ComboboxSelected>>',load_search)
+    ttk.Button(bar,text='حفظ البحث',command=save_search).pack(side='left',padx=5)
+    ttk.Button(tools_bar,text='حذف المحفوظ',command=delete_search).pack(side='left')
+    def toggle_favorite():
+        if not table.selection():note.set('اختر خبرا لإضافته أو إزالته من المفضلة');return
+        key=shown[int(table.selection()[0])]['id']
+        if key in favorites:favorites.remove(key)
+        else:favorites.add(key)
+        save_preferences();render()
+    def show_copies():
+        if not table.selection():note.set('اختر خبرا أولا');return
+        group=shown_groups[int(table.selection()[0])]
+        window=tk.Toplevel(root);window.title('النسخ المتشابهة — تجميع تقديري');window.geometry('850x450')
+        ttk.Label(window,text='التجميع حسب تشابه العنوان؛ راجع المحتوى. لم يُحذف أي مصدر.').pack(pady=8)
+        listing=ttk.Treeview(window,columns=('source','title'),show='headings')
+        listing.heading('source',text='المصدر');listing.heading('title',text='العنوان');listing.column('title',width=600)
+        listing.pack(fill='both',expand=True)
+        for index,row in enumerate(group):listing.insert('','end',iid=str(index),values=(listening_tools.source_name(row),row['title']))
+        def open_copy(_=None):
+            if listing.selection():webbrowser.open(group[int(listing.selection()[0])]['url'])
+        listing.bind('<Double-1>',open_copy)
+        ttk.Button(window,text='فتح المصدر المحدد',command=open_copy).pack(pady=8)
+    def dashboard():
+        rows=list(candidates)
+        terms={label:SEARCH_TOPICS[key]['ar']+SEARCH_TOPICS[key]['en'] for key,label in [('sports_tourism','سياحة رياضية وفعاليات'),('business_tourism','سياحة أعمال ومؤتمرات'),('medical_tourism','سياحة علاجية ودامجة'),('heritage_nature','تراث وطبيعة'),('hospitality_training','فندقة وتدريب'),('visitor_protection','تجربة الزائر وحمايته'),('jannah','أردننا جنة')]}
+        data=listening_tools.summary(rows,publication_time,impact_details,terms)
+        window=tk.Toplevel(root);window.title('لوحة تحليل الرصد');window.geometry('950x700')
+        ttk.Label(window,text='تحليل النتائج المطابقة للفلاتر عند فتح النافذة',font=('Arial',16,'bold')).pack(pady=8)
+        ttk.Label(window,text=f"مواد: {data['total']} | مجموعات أخبار تقديرية: {data['stories']} | مصادر: {len(data['sources'])} | تاريخ غير معروف: {data['unknown']}").pack()
+        ttk.Label(window,text='الأرقام تخص النتائج المجموعة فقط؛ لا تمثل الوصول أو المشاهدات أو جميع التغطية. الاتجاه تقديري والموضوع قد يتكرر في أكثر من فئة.').pack(pady=5)
+        tabs=ttk.Notebook(window);tabs.pack(fill='both',expand=True,padx=10,pady=10)
+        trend=ttk.Frame(tabs);tabs.add(trend,text='الحركة الزمنية')
+        chart=tk.Canvas(trend,height=240,bg='white');chart.pack(fill='x',padx=10,pady=10)
+        def draw(_=None):
+            chart.delete('all');width=max(chart.winfo_width(),400);height=220
+            days=sorted(data['days'].items());step=(width-60)/max(len(days),1);peak=max(data['days'].values(),default=1)
+            if not days:chart.create_text(width/2,100,text='لا توجد نتائج مؤرخة مطابقة للفلاتر');return
+            for index,(day,value) in enumerate(days):
+                x=40+index*step;top=height-40-value/peak*150
+                chart.create_rectangle(x,top,x+step*.6,height-40,fill='#22376b',outline='')
+                chart.create_text(x+step*.3,top-12,text=str(value));chart.create_text(x+step*.3,height-20,text=day)
+        chart.bind('<Configure>',draw)
+        ttk.Label(trend,text='عدد المواد حسب يوم النشر بتوقيت الأردن؛ النسخ المتشابهة محسوبة كمواد منفصلة.').pack()
+        if period.get()=='الكل':
+            signal=(f"آخر 24 ساعة: {data['current']} | الـ24 ساعة السابقة: {data['previous']}")
+            if data['spike']:signal+=' | زيادة ملحوظة في النتائج المجموعة؛ راجع الأخبار وحالة الجمع'
+            elif data['previous']<3:signal+=' | بيانات المقارنة محدودة'
+            ttk.Label(trend,text=signal,wraplength=850).pack(pady=10)
+        for title,key in [('المصادر','sources'),('الاتجاه التقديري','sentiments'),('الموضوعات','topics')]:
+            frame=ttk.Frame(tabs);tabs.add(frame,text=title)
+            tree=ttk.Treeview(frame,columns=('name','count'),show='headings')
+            tree.heading('name',text=title);tree.heading('count',text='عدد المواد');tree.column('name',width=650)
+            tree.pack(fill='both',expand=True)
+            for name,value in data[key].most_common():tree.insert('','end',values=(name,value))
+        ttk.Label(window,text='اللقطة لا تتحدث تلقائيا؛ أغلقها وأعد فتحها بعد تغيير الفلاتر أو تحديث الأخبار.').pack(pady=5)
+    ttk.Button(action_bar,text='لوحة التحليل',command=dashboard).pack(side='right',padx=5)
+    ttk.Button(action_bar,text='★ المفضلة',command=toggle_favorite).pack(side='right',padx=5)
+    ttk.Button(action_bar,text='مصادر الخبر',command=show_copies).pack(side='right',padx=5)
     def show_reason(_):
         if table.selection():
             direction, reason = impact_details(shown[int(table.selection()[0])])
@@ -634,7 +747,7 @@ def desktop():
         if target:
             with open(target,'w',encoding='utf-8-sig',newline='') as f:
                 w=csv.writer(f); w.writerow(['العنوان','المصدر','وقت النشر','الرابط','الاتجاه التقديري','سبب التصنيف','نطاق القراءة','رابط المصدر'])
-                for r in shown: w.writerow([r['title'],r['source'],r['published'],r['url'],*impact_details(r),text_status(r),r.get('article_url',r['url'])])
+                for r in candidates: w.writerow([listening_tools.csv_cell(v) for v in [r['title'],r['source'],r['published'],r['url'],*impact_details(r),text_status(r),r.get('article_url',r['url'])]])
     translation_callbacks = {}
     saved_key='';key_load_error=''
     try:
@@ -785,6 +898,9 @@ def desktop():
         root.after(REFRESH_INTERVAL_MS, auto_refresh)
     def tick():
         retained = prune_archive(state)
+        kept_ids={r['id'] for r in retained['items']}
+        if favorites-kept_ids:
+            favorites.intersection_update(kept_ids);save_preferences()
         if retained['items'] != state['items']:
             state['items'] = retained['items']
             path.write_text(json.dumps(state,ensure_ascii=False),encoding='utf-8')
